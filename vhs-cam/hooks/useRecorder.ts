@@ -4,11 +4,14 @@ import { getBestMimeType } from '@/lib/capture'
 
 export type RecorderStatus = 'idle' | 'recording'
 
-export function useRecorder(canvas: React.RefObject<HTMLCanvasElement | null>) {
+export function useRecorder(
+  canvas: React.RefObject<HTMLCanvasElement | null>,
+  audioRef: React.RefObject<MediaStream | null>
+) {
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef   = useRef<Blob[]>([])
-  const [status, setStatus]     = useState<RecorderStatus>('idle')
-  const [duration, setDuration] = useState(0)
+  const [status, setStatus]           = useState<RecorderStatus>('idle')
+  const [duration, setDuration]       = useState(0)
   const [recordError, setRecordError] = useState<string | null>(null)
   const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -21,25 +24,34 @@ export function useRecorder(canvas: React.RefObject<HTMLCanvasElement | null>) {
     const captureStream = (el as any).captureStream ?? (el as any).mozCaptureStream
     if (!captureStream) throw new Error('captureStream not supported in this browser')
 
-    let stream: MediaStream
+    let canvasStream: MediaStream
     try {
-      stream = captureStream.call(el, 30) as MediaStream
+      canvasStream = captureStream.call(el, 30) as MediaStream
     } catch (e) {
       throw new Error('Failed to capture canvas stream: ' + (e instanceof Error ? e.message : e))
     }
 
-    if (!stream || stream.getVideoTracks().length === 0) {
+    if (!canvasStream || canvasStream.getVideoTracks().length === 0) {
       throw new Error('Canvas stream has no video tracks')
     }
+
+    // Merge video + audio into a single stream
+    const combined = new MediaStream()
+    canvasStream.getVideoTracks().forEach(t => combined.addTrack(t))
+    audioRef.current?.getAudioTracks().forEach(t => combined.addTrack(t))
 
     const mimeType = getBestMimeType()
     chunksRef.current = []
 
     let recorder: MediaRecorder
     try {
-      recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 })
+      recorder = new MediaRecorder(combined, {
+        mimeType,
+        videoBitsPerSecond: 8_000_000,
+        audioBitsPerSecond: 128_000,
+      })
     } catch {
-      recorder = new MediaRecorder(stream)
+      recorder = new MediaRecorder(combined)
     }
 
     recorder.ondataavailable = e => {
@@ -55,7 +67,7 @@ export function useRecorder(canvas: React.RefObject<HTMLCanvasElement | null>) {
     setStatus('recording')
     setDuration(0)
     timerRef.current = setInterval(() => setDuration(d => d + 1), 1000)
-  }, [canvas])
+  }, [canvas, audioRef])
 
   const stop = useCallback((): Promise<{ chunks: Blob[]; mimeType: string }> => {
     return new Promise(resolve => {

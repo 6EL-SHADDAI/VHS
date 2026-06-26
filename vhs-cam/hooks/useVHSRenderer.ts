@@ -7,7 +7,8 @@ const MODE_MAP: Record<FilterMode, number> = {
   'vhs':        0,
   'vhs-c':      1,
   'glitch':     2,
-  'film':       0, // film pipeline TBD — fall back to VHS for now
+  'night':      3,
+  'film':       0,
   'disposable': 0,
   'polaroid':   0,
 }
@@ -46,7 +47,6 @@ export function useVHSRenderer(
 
   useEffect(() => {
     if (!active || !glStateRef.current) return
-
     const loop = () => {
       const video = videoRef.current
       const state = glStateRef.current
@@ -59,12 +59,12 @@ export function useVHSRenderer(
           warmth:   params.warmth,
           contrast: params.contrast,
           vignette: params.vignette,
+          bloom:    params.bloom,
           mode:     MODE_MAP[filter] ?? 0,
         })
       }
       animRef.current = requestAnimationFrame(loop)
     }
-
     animRef.current = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(animRef.current)
   }, [active, filter, params, videoRef])

@@ -13,8 +13,8 @@ import type { FilterMode, FilterParams } from '@/types'
 
 export function CameraView() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const { videoRef, status, error, facing, start, flip } = useCamera()
-  const recorder = useRecorder(canvasRef)
+  const { videoRef, audioRef, status, error, facing, hasAudio, start, flip } = useCamera()
+  const recorder = useRecorder(canvasRef, audioRef)
 
   const [filter, setFilter] = useState<FilterMode>('vhs')
   const [params, setParams] = useState<FilterParams>(FILTER_PRESETS['vhs'])
@@ -26,7 +26,7 @@ export function CameraView() {
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
-    setTimeout(() => setToast(null), 2200)
+    setTimeout(() => setToast(null), 2500)
   }, [])
 
   const handleFilterChange = (f: FilterMode) => {
@@ -39,7 +39,7 @@ export function CameraView() {
       showToast('SAVING...')
       const { chunks, mimeType } = await recorder.stop()
       if (chunks.length === 0) {
-        showToast('NO DATA — try Chrome/Edge')
+        showToast('NO DATA — use Chrome or Edge')
         return
       }
       if (canvasRef.current) {
@@ -49,7 +49,7 @@ export function CameraView() {
     } else {
       try {
         await recorder.start()
-        showToast('● REC')
+        showToast(hasAudio ? '● REC + AUDIO' : '● REC (no mic)')
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Recording failed'
         showToast('ERR: ' + msg.slice(0, 40))
@@ -74,13 +74,18 @@ export function CameraView() {
       <div className="relative flex-1 overflow-hidden bg-black">
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover" />
         {cameraReady && (
-          <VHSViewfinder recording={recorder.status === 'recording'} duration={recorder.duration} filter={filter} />
+          <VHSViewfinder
+            recording={recorder.status === 'recording'}
+            duration={recorder.duration}
+            filter={filter}
+            hasAudio={hasAudio}
+          />
         )}
         {!cameraReady && (
           <NoSignal status={status} error={error} onEnable={() => start('environment')} />
         )}
         {toast && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/80 border border-zinc-700 text-yellow-300 text-xs tracking-widest px-4 py-2 rounded z-50 pointer-events-none">
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/85 border border-zinc-700 text-yellow-300 text-xs tracking-widest px-4 py-2 rounded z-50 pointer-events-none whitespace-nowrap">
             {toast}
           </div>
         )}
@@ -95,6 +100,7 @@ export function CameraView() {
         recording={recorder.status === 'recording'}
         cameraReady={cameraReady}
         filter={filter}
+        hasAudio={hasAudio}
       />
     </div>
   )

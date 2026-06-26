@@ -34,7 +34,6 @@ export function initGL(canvas: HTMLCanvasElement): GLState {
   }
   gl.useProgram(program)
 
-  // Fullscreen quad
   const buf = gl.createBuffer()!
   gl.bindBuffer(gl.ARRAY_BUFFER, buf)
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW)
@@ -42,10 +41,12 @@ export function initGL(canvas: HTMLCanvasElement): GLState {
   gl.enableVertexAttribArray(posLoc)
   gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0)
 
-  const videoTexture = createVideoTexture(gl)
-  const grainTexture = createGrainTexture(gl)
-
-  return { gl, program, videoTexture, grainTexture }
+  return {
+    gl,
+    program,
+    videoTexture: createVideoTexture(gl),
+    grainTexture: createGrainTexture(gl),
+  }
 }
 
 function createVideoTexture(gl: WebGLRenderingContext): WebGLTexture {
@@ -86,19 +87,12 @@ export function renderFrame(
   state: GLState,
   video: HTMLVideoElement,
   uniforms: {
-    time: number
-    glitch: number
-    noise: number
-    blur: number
-    warmth: number
-    contrast: number
-    vignette: number
-    mode: number
+    time: number; glitch: number; noise: number; blur: number
+    warmth: number; contrast: number; vignette: number; bloom: number; mode: number
   }
 ) {
   const { gl, program, videoTexture, grainTexture } = state
 
-  // Upload video frame to GPU
   gl.activeTexture(gl.TEXTURE0)
   gl.bindTexture(gl.TEXTURE_2D, videoTexture)
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video)
@@ -116,6 +110,7 @@ export function renderFrame(
   gl.uniform1f(u('u_warmth'),   uniforms.warmth)
   gl.uniform1f(u('u_contrast'), uniforms.contrast)
   gl.uniform1f(u('u_vignette'), uniforms.vignette)
+  gl.uniform1f(u('u_bloom'),    uniforms.bloom)
   gl.uniform1i(u('u_mode'),     uniforms.mode)
 
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
