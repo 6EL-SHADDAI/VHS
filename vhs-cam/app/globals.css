@@ -14,5 +14,9 @@ html, body {
   user-select: none;
 }
 
-/* Prevent iOS rubber-band scroll */
 body { position: fixed; width: 100%; }
+
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.pt-safe { padding-top:    env(safe-area-inset-top,    0px); }
+
+input[type='range'] { touch-action: pan-x; }
