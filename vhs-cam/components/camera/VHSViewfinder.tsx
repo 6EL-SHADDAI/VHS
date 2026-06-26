@@ -13,9 +13,10 @@ interface Props {
   recording: boolean
   duration:  number
   filter:    FilterMode
+  hasAudio:  boolean
 }
 
-export function VHSViewfinder({ recording, duration, filter }: Props) {
+export function VHSViewfinder({ recording, duration, hasAudio }: Props) {
   const [frame, setFrame]     = useState(0)
   const [visible, setVisible] = useState(true)
 
@@ -45,6 +46,9 @@ export function VHSViewfinder({ recording, duration, filter }: Props) {
           >
             {recording ? 'REC' : 'STBY'}
           </span>
+          {recording && hasAudio && (
+            <span className="text-[9px] text-red-400/70 tracking-widest">🎙</span>
+          )}
         </div>
         <div className="text-[9px] text-zinc-600 tracking-widest">SP ● HI-FI</div>
       </div>

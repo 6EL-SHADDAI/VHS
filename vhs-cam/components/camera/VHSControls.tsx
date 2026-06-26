@@ -11,6 +11,7 @@ interface Props {
   recording:     boolean
   cameraReady:   boolean
   filter:        FilterMode
+  hasAudio:      boolean
 }
 
 const SLIDERS: { key: keyof FilterParams; label: string }[] = [
@@ -21,7 +22,7 @@ const SLIDERS: { key: keyof FilterParams; label: string }[] = [
 
 export function VHSControls({
   params, onParamChange, onRecord, onPhoto, onFlip,
-  recording, cameraReady,
+  recording, cameraReady, hasAudio,
 }: Props) {
   return (
     <div className="bg-black border-t border-zinc-900 flex flex-col shrink-0 pb-safe">
@@ -29,7 +30,9 @@ export function VHSControls({
       {recording && (
         <div className="flex items-center justify-center gap-2 py-2 bg-red-950/60 border-b border-red-900">
           <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-          <span className="text-red-400 text-xs font-bold tracking-widest font-mono">RECORDING — TAP STOP TO SAVE</span>
+          <span className="text-red-400 text-xs font-bold tracking-widest font-mono">
+            RECORDING{hasAudio ? ' + AUDIO' : ''} — TAP STOP TO SAVE
+          </span>
         </div>
       )}
 

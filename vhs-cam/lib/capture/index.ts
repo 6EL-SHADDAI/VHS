@@ -1,4 +1,5 @@
 import { saveCapture } from '@/lib/db/gallery'
+import { transcodeToMP4, type TranscodeProgress } from '@/lib/transcode'
 import type { CaptureItem, FilterMode, FilterParams } from '@/types'
 
 function generateId(): string {
@@ -34,38 +35,46 @@ export async function capturePhoto(
     makeThumbnail(canvas),
   ])
   const item: CaptureItem = {
-    id: generateId(),
-    type: 'photo',
-    blob,
-    thumbnail,
-    filter,
-    params,
-    createdAt: Date.now(),
+    id: generateId(), type: 'photo', blob, thumbnail, filter, params, createdAt: Date.now(),
   }
   await saveCapture(item)
   downloadBlob(blob, `VHS_${timestamp()}.jpg`)
 }
 
 export async function saveVideoCapture(
-  chunks: Blob[],
-  mimeType: string,
-  canvas: HTMLCanvasElement,
-  filter: FilterMode,
-  params: FilterParams
+  chunks:      Blob[],
+  mimeType:    string,
+  canvas:      HTMLCanvasElement,
+  filter:      FilterMode,
+  params:      FilterParams,
+  onProgress?: (p: TranscodeProgress & { stage: 'transcoding' | 'saving' }) => void
 ): Promise<void> {
-  const blob      = new Blob(chunks, { type: mimeType })
+  const webmBlob  = new Blob(chunks, { type: mimeType })
   const thumbnail = await makeThumbnail(canvas)
+
+  let finalBlob: Blob
+  let filename:  string
+
+  try {
+    onProgress?.({ stage: 'transcoding', ratio: 0, time: 0 })
+    const mp4Blob = await transcodeToMP4(webmBlob, (p) => {
+      onProgress?.({ stage: 'transcoding', ...p })
+    })
+    finalBlob = mp4Blob
+    filename  = `VHS_${timestamp()}.mp4`
+  } catch (e) {
+    console.warn('MP4 transcode failed, saving WebM:', e)
+    finalBlob = webmBlob
+    filename  = `VHS_${timestamp()}.webm`
+  }
+
+  onProgress?.({ stage: 'saving', ratio: 1, time: 0 })
+
   const item: CaptureItem = {
-    id: generateId(),
-    type: 'video',
-    blob,
-    thumbnail,
-    filter,
-    params,
-    createdAt: Date.now(),
+    id: generateId(), type: 'video', blob: finalBlob, thumbnail, filter, params, createdAt: Date.now(),
   }
   await saveCapture(item)
-  downloadBlob(blob, `VHS_${timestamp()}.webm`)
+  downloadBlob(finalBlob, filename)
 }
 
 export function getBestMimeType(): string {

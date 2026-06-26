@@ -1,15 +1,24 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
   async redirects() {
     return [
+      { source: '/', destination: '/camera', permanent: false },
+    ]
+  },
+
+  async headers() {
+    return [
       {
-        source: '/',
-        destination: '/camera',
-        permanent: false,
+        source: '/:path*',
+        headers: [
+          { key: 'Cross-Origin-Opener-Policy',  value: 'same-origin' },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
+          { key: 'Cross-Origin-Resource-Policy', value: 'cross-origin' },
+        ],
       },
     ]
   },
-};
+}
 
-export default nextConfig;
+export default nextConfig
