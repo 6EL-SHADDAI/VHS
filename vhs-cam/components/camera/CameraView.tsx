@@ -4,7 +4,7 @@ import { useCamera } from '@/hooks/useCamera'
 import { useRecorder } from '@/hooks/useRecorder'
 import { useVHSRenderer } from '@/hooks/useVHSRenderer'
 import { capturePhoto, saveVideoCapture } from '@/lib/capture'
-import { FILTER_PRESETS, FILTER_LABELS, VHS_MODES } from '@/lib/filters/presets'
+import { FILTER_PRESETS, FILTER_LABELS } from '@/lib/filters/presets'
 import { VHSViewfinder } from './VHSViewfinder'
 import { VHSControls } from './VHSControls'
 import { FilterStrip } from './FilterStrip'
@@ -16,9 +16,9 @@ export function CameraView() {
   const { videoRef, status, error, facing, start, flip } = useCamera()
   const recorder = useRecorder(canvasRef)
 
-  const [filter, setFilter]   = useState<FilterMode>('vhs')
-  const [params, setParams]   = useState<FilterParams>(FILTER_PRESETS['vhs'])
-  const [toast, setToast]     = useState<string | null>(null)
+  const [filter, setFilter] = useState<FilterMode>('vhs')
+  const [params, setParams] = useState<FilterParams>(FILTER_PRESETS['vhs'])
+  const [toast, setToast]   = useState<string | null>(null)
 
   const cameraReady = status === 'ready'
 
@@ -36,14 +36,25 @@ export function CameraView() {
 
   const handleRecord = async () => {
     if (recorder.status === 'recording') {
+      showToast('SAVING...')
       const { chunks, mimeType } = await recorder.stop()
+      if (chunks.length === 0) {
+        showToast('NO DATA — try Chrome/Edge')
+        return
+      }
       if (canvasRef.current) {
         await saveVideoCapture(chunks, mimeType, canvasRef.current, filter, params)
         showToast('VIDEO SAVED ✓')
       }
     } else {
-      await recorder.start()
-      showToast('● REC')
+      try {
+        await recorder.start()
+        showToast('● REC')
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Recording failed'
+        showToast('ERR: ' + msg.slice(0, 40))
+        console.error('Record start error:', e)
+      }
     }
   }
 
@@ -59,44 +70,22 @@ export function CameraView() {
 
   return (
     <div className="relative w-full h-screen flex flex-col bg-black overflow-hidden">
-      {/* Hidden video element — camera feed source */}
       <video ref={videoRef} className="hidden" playsInline muted />
-
-      {/* Viewfinder */}
       <div className="relative flex-1 overflow-hidden bg-black">
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover" />
-
         {cameraReady && (
-          <VHSViewfinder
-            recording={recorder.status === 'recording'}
-            duration={recorder.duration}
-            filter={filter}
-          />
+          <VHSViewfinder recording={recorder.status === 'recording'} duration={recorder.duration} filter={filter} />
         )}
-
         {!cameraReady && (
-          <NoSignal
-            status={status}
-            error={error}
-            onEnable={() => start('environment')}
-          />
+          <NoSignal status={status} error={error} onEnable={() => start('environment')} />
         )}
-
         {toast && (
           <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/80 border border-zinc-700 text-yellow-300 text-xs tracking-widest px-4 py-2 rounded z-50 pointer-events-none">
             {toast}
           </div>
         )}
       </div>
-
-      {/* Filter strip */}
-      <FilterStrip
-        current={filter}
-        onChange={handleFilterChange}
-        labels={FILTER_LABELS}
-      />
-
-      {/* Controls */}
+      <FilterStrip current={filter} onChange={handleFilterChange} labels={FILTER_LABELS} />
       <VHSControls
         params={params}
         onParamChange={handleParamChange}

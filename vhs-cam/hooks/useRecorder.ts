@@ -5,49 +5,77 @@ import { getBestMimeType } from '@/lib/capture'
 export type RecorderStatus = 'idle' | 'recording'
 
 export function useRecorder(canvas: React.RefObject<HTMLCanvasElement | null>) {
-  const recorderRef  = useRef<MediaRecorder | null>(null)
-  const chunksRef    = useRef<Blob[]>([])
-  const [status, setStatus]   = useState<RecorderStatus>('idle')
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef   = useRef<Blob[]>([])
+  const [status, setStatus]     = useState<RecorderStatus>('idle')
   const [duration, setDuration] = useState(0)
-  const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [recordError, setRecordError] = useState<string | null>(null)
+  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const start = useCallback(async (): Promise<void> => {
-    if (!canvas.current) throw new Error('No canvas')
-    const stream   = canvas.current.captureStream(30)
+    setRecordError(null)
+    const el = canvas.current
+    if (!el) throw new Error('Canvas not ready')
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const captureStream = (el as any).captureStream ?? (el as any).mozCaptureStream
+    if (!captureStream) throw new Error('captureStream not supported in this browser')
+
+    let stream: MediaStream
+    try {
+      stream = captureStream.call(el, 30) as MediaStream
+    } catch (e) {
+      throw new Error('Failed to capture canvas stream: ' + (e instanceof Error ? e.message : e))
+    }
+
+    if (!stream || stream.getVideoTracks().length === 0) {
+      throw new Error('Canvas stream has no video tracks')
+    }
+
     const mimeType = getBestMimeType()
     chunksRef.current = []
 
-    const recorder = new MediaRecorder(stream, {
-      mimeType,
-      videoBitsPerSecond: 8_000_000,
-    })
-    recorder.ondataavailable = e => {
-      if (e.data.size > 0) chunksRef.current.push(e.data)
+    let recorder: MediaRecorder
+    try {
+      recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 })
+    } catch {
+      recorder = new MediaRecorder(stream)
     }
+
+    recorder.ondataavailable = e => {
+      if (e.data && e.data.size > 0) chunksRef.current.push(e.data)
+    }
+    recorder.onerror = (e) => {
+      console.error('MediaRecorder error:', e)
+      setRecordError('Recording error')
+    }
+
     recorder.start(100)
     recorderRef.current = recorder
     setStatus('recording')
     setDuration(0)
-
     timerRef.current = setInterval(() => setDuration(d => d + 1), 1000)
   }, [canvas])
 
   const stop = useCallback((): Promise<{ chunks: Blob[]; mimeType: string }> => {
     return new Promise(resolve => {
       const recorder = recorderRef.current
-      if (!recorder) return resolve({ chunks: [], mimeType: 'video/webm' })
-      const mimeType = recorder.mimeType
-
-      recorder.onstop = () => {
+      if (!recorder) {
+        resolve({ chunks: chunksRef.current, mimeType: 'video/webm' })
+        return
+      }
+      const mimeType = recorder.mimeType || 'video/webm'
+      recorder.onstop = () => resolve({ chunks: chunksRef.current, mimeType })
+      try { recorder.stop() } catch (e) {
+        console.error('Error stopping recorder:', e)
         resolve({ chunks: chunksRef.current, mimeType })
       }
-      recorder.stop()
       recorderRef.current = null
       setStatus('idle')
       setDuration(0)
-      if (timerRef.current) clearInterval(timerRef.current)
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
     })
   }, [])
 
-  return { status, duration, start, stop }
+  return { status, duration, recordError, start, stop }
 }

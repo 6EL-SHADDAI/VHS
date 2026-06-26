@@ -1,5 +1,9 @@
-import { redirect } from 'next/navigation'
+'use client'
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
 export default function Root() {
-  redirect('/camera')
+  const router = useRouter()
+  useEffect(() => { router.replace('/camera') }, [router])
+  return null
 }
