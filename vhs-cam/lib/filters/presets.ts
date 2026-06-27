@@ -1,13 +1,27 @@
 import type { FilterMode, FilterParams } from '@/types'
 
 export const FILTER_PRESETS: Record<FilterMode, FilterParams> = {
-  'vhs':        { glitch: 40, noise: 55, blur: 60, warmth: 65, contrast: 40, vignette: 70, bloom:  0 },
-  'vhs-c':      { glitch: 20, noise: 35, blur: 30, warmth: 45, contrast: 35, vignette: 50, bloom:  0 },
-  'glitch':     { glitch: 80, noise: 65, blur: 20, warmth: 30, contrast: 55, vignette: 40, bloom:  0 },
-  'night':      { glitch: 25, noise: 70, blur: 25, warmth:  0, contrast: 60, vignette: 80, bloom: 40 },
-  'film':       { glitch:  5, noise: 45, blur: 10, warmth: 50, contrast: 50, vignette: 60, bloom: 20 },
-  'disposable': { glitch:  8, noise: 60, blur: 15, warmth: 70, contrast: 65, vignette: 55, bloom: 30 },
-  'polaroid':   { glitch:  5, noise: 30, blur: 20, warmth: 60, contrast: 30, vignette: 35, bloom: 15 },
+  'vhs': {
+    glitch: 35, noise: 50, blur: 65, warmth: 70, contrast: 45, vignette: 65, bloom: 0,
+  },
+  'vhs-c': {
+    glitch: 18, noise: 30, blur: 40, warmth: 55, contrast: 40, vignette: 50, bloom: 0,
+  },
+  'glitch': {
+    glitch: 82, noise: 68, blur: 25, warmth: 28, contrast: 55, vignette: 40, bloom: 0,
+  },
+  'night': {
+    glitch: 15, noise: 35, blur: 20, warmth: 0, contrast: 65, vignette: 85, bloom: 55,
+  },
+  'film': {
+    glitch: 5, noise: 40, blur: 12, warmth: 55, contrast: 50, vignette: 60, bloom: 20,
+  },
+  'disposable': {
+    glitch: 8, noise: 58, blur: 18, warmth: 72, contrast: 62, vignette: 52, bloom: 28,
+  },
+  'polaroid': {
+    glitch: 4, noise: 28, blur: 22, warmth: 62, contrast: 28, vignette: 32, bloom: 14,
+  },
 }
 
 export const FILTER_LABELS: Record<FilterMode, string> = {
