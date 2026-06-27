@@ -18,11 +18,10 @@ export function CameraView() {
   const recorder = useRecorder(canvasRef, audioRef)
   const flash    = useFlash(streamRef)
 
-  const [filter, setFilter]                       = useState<FilterMode>('vhs')
-  const [params, setParams]                       = useState<FilterParams>(FILTER_PRESETS['vhs'])
-  const [toast, setToast]                         = useState<string | null>(null)
-  const [transcoding, setTranscoding]             = useState(false)
-  const [transcodeProgress, setTranscodeProgress] = useState(0)
+  const [filter, setFilter] = useState<FilterMode>('vhs')
+  const [params, setParams] = useState<FilterParams>(FILTER_PRESETS['vhs'])
+  const [toast, setToast]   = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   const cameraReady = status === 'ready'
   useVHSRenderer(canvasRef, videoRef, filter, params, cameraReady)
@@ -40,29 +39,25 @@ export function CameraView() {
   const handleRecord = async () => {
     if (recorder.status === 'recording') {
       await flash.stopTorch()
-      showToast('STOPPING...')
       const { chunks, mimeType } = await recorder.stop()
+
       if (chunks.length === 0) {
         showToast('NO DATA — use Chrome or Edge')
         return
       }
       if (!canvasRef.current) return
 
-      setTranscoding(true)
-      setTranscodeProgress(0)
+      setSaving(true)
+      showToast('SAVING...')
 
       try {
-        await saveVideoCapture(
-          chunks, mimeType, canvasRef.current, filter, params,
-          (msg) => { setTranscoding(true); setToast(msg) }
-        )
+        await saveVideoCapture(chunks, mimeType, canvasRef.current, filter, params)
         showToast('VIDEO SAVED ✓')
       } catch (e) {
         console.error('Save failed:', e)
-        showToast('SAVE FAILED — check console')
+        showToast('SAVE FAILED')
       } finally {
-        setTranscoding(false)
-        setTranscodeProgress(0)
+        setSaving(false)
       }
     } else {
       try {
@@ -108,17 +103,7 @@ export function CameraView() {
           <NoSignal status={status} error={error} onEnable={() => start('environment')} />
         )}
 
-        {transcoding && (
-          <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center gap-5 z-40">
-            <p className="text-yellow-300 text-xs tracking-widest font-mono">{toast ?? 'PROCESSING...'}</p>
-            <div className="w-56 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-              <div className="h-full bg-yellow-400 rounded-full animate-pulse" style={{ width: '60%' }} />
-            </div>
-            <p className="text-zinc-700 text-[9px] tracking-widest font-mono">DO NOT CLOSE THIS PAGE</p>
-          </div>
-        )}
-
-        {toast && !transcoding && (
+        {toast && (
           <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/85 border border-zinc-700 text-yellow-300 text-xs tracking-widest px-4 py-2 rounded z-50 pointer-events-none whitespace-nowrap">
             {toast}
           </div>
@@ -135,7 +120,7 @@ export function CameraView() {
         onFlip={flip}
         onFlashCycle={flash.cycleFlash}
         recording={recorder.status === 'recording'}
-        cameraReady={cameraReady && !transcoding}
+        cameraReady={cameraReady && !saving}
         filter={filter}
         hasAudio={hasAudio}
         flashMode={flash.flashMode}
