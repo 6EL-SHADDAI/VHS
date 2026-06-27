@@ -1,17 +1,21 @@
 'use client'
 import Link from 'next/link'
+import type { FlashMode } from '@/hooks/useFlash'
 import type { FilterMode, FilterParams } from '@/types'
 
 interface Props {
-  params:        FilterParams
-  onParamChange: (key: keyof FilterParams, value: number) => void
-  onRecord:      () => void
-  onPhoto:       () => void
-  onFlip:        () => void
-  recording:     boolean
-  cameraReady:   boolean
-  filter:        FilterMode
-  hasAudio:      boolean
+  params:         FilterParams
+  onParamChange:  (key: keyof FilterParams, value: number) => void
+  onRecord:       () => void
+  onPhoto:        () => void
+  onFlip:         () => void
+  onFlashCycle:   () => void
+  recording:      boolean
+  cameraReady:    boolean
+  filter:         FilterMode
+  hasAudio:       boolean
+  flashMode:      FlashMode
+  flashSupported: boolean
 }
 
 const SLIDERS: { key: keyof FilterParams; label: string }[] = [
@@ -20,9 +24,21 @@ const SLIDERS: { key: keyof FilterParams; label: string }[] = [
   { key: 'vignette', label: 'VIGNETTE' },
 ]
 
+const FLASH_ICON: Record<FlashMode, string> = {
+  off:  '⚡',
+  on:   '🔦',
+  auto: '⚡A',
+}
+
+const FLASH_COLOR: Record<FlashMode, string> = {
+  off:  'text-zinc-600 border-zinc-800',
+  on:   'text-yellow-300 border-yellow-500',
+  auto: 'text-yellow-500 border-yellow-700',
+}
+
 export function VHSControls({
-  params, onParamChange, onRecord, onPhoto, onFlip,
-  recording, cameraReady, hasAudio,
+  params, onParamChange, onRecord, onPhoto, onFlip, onFlashCycle,
+  recording, cameraReady, hasAudio, flashMode, flashSupported,
 }: Props) {
   return (
     <div className="bg-black border-t border-zinc-900 flex flex-col shrink-0 pb-safe">
@@ -41,8 +57,7 @@ export function VHSControls({
           <div key={key} className="flex flex-col items-center gap-2 flex-1">
             <label className="text-[9px] text-zinc-600 tracking-widest font-mono">{label}</label>
             <input
-              type="range"
-              min={0} max={100} step={1}
+              type="range" min={0} max={100} step={1}
               value={params[key]}
               onChange={e => onParamChange(key, Number(e.target.value))}
               className="w-full cursor-pointer appearance-none bg-transparent
@@ -111,8 +126,8 @@ export function VHSControls({
           </span>
         </div>
 
-        <div className="flex flex-col items-center gap-3 w-14">
-          <div className="flex flex-col items-center gap-1.5">
+        <div className="flex flex-col items-center gap-2 w-14">
+          <div className="flex flex-col items-center gap-1">
             <button
               onClick={onPhoto}
               disabled={!cameraReady}
@@ -125,15 +140,26 @@ export function VHSControls({
             </button>
             <span className="text-[9px] text-zinc-700 tracking-widest font-mono">PHOTO</span>
           </div>
-          <button
-            onClick={onFlip}
-            className="w-10 h-10 rounded-full border border-zinc-800 bg-zinc-900 flex items-center justify-center active:scale-95 transition-transform"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M1 4v6h6"/><path d="M23 20v-6h-6"/>
-              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/>
-            </svg>
-          </button>
+
+          <div className="flex items-center gap-2">
+            {flashSupported && (
+              <button
+                onClick={onFlashCycle}
+                className={`w-9 h-9 rounded-full border bg-zinc-900 flex items-center justify-center active:scale-95 transition-all text-sm font-bold ${FLASH_COLOR[flashMode]}`}
+              >
+                {FLASH_ICON[flashMode]}
+              </button>
+            )}
+            <button
+              onClick={onFlip}
+              className="w-9 h-9 rounded-full border border-zinc-800 bg-zinc-900 flex items-center justify-center active:scale-95 transition-transform"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 4v6h6"/><path d="M23 20v-6h-6"/>
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
       </div>

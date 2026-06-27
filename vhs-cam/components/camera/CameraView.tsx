@@ -3,6 +3,7 @@ import { useRef, useState, useCallback } from 'react'
 import { useCamera } from '@/hooks/useCamera'
 import { useRecorder } from '@/hooks/useRecorder'
 import { useVHSRenderer } from '@/hooks/useVHSRenderer'
+import { useFlash } from '@/hooks/useFlash'
 import { capturePhoto, saveVideoCapture } from '@/lib/capture'
 import { FILTER_PRESETS, FILTER_LABELS } from '@/lib/filters/presets'
 import { VHSViewfinder } from './VHSViewfinder'
@@ -13,13 +14,14 @@ import type { FilterMode, FilterParams } from '@/types'
 
 export function CameraView() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const { videoRef, audioRef, status, error, hasAudio, start, flip } = useCamera()
+  const { videoRef, audioRef, streamRef, status, error, hasAudio, start, flip } = useCamera()
   const recorder = useRecorder(canvasRef, audioRef)
+  const flash    = useFlash(streamRef)
 
-  const [filter, setFilter]               = useState<FilterMode>('vhs')
-  const [params, setParams]               = useState<FilterParams>(FILTER_PRESETS['vhs'])
-  const [toast, setToast]                 = useState<string | null>(null)
-  const [transcoding, setTranscoding]     = useState(false)
+  const [filter, setFilter]                       = useState<FilterMode>('vhs')
+  const [params, setParams]                       = useState<FilterParams>(FILTER_PRESETS['vhs'])
+  const [toast, setToast]                         = useState<string | null>(null)
+  const [transcoding, setTranscoding]             = useState(false)
   const [transcodeProgress, setTranscodeProgress] = useState(0)
 
   const cameraReady = status === 'ready'
@@ -37,6 +39,7 @@ export function CameraView() {
 
   const handleRecord = async () => {
     if (recorder.status === 'recording') {
+      await flash.stopTorch()
       showToast('STOPPING...')
       const { chunks, mimeType } = await recorder.stop()
       if (chunks.length === 0) {
@@ -48,19 +51,25 @@ export function CameraView() {
       setTranscoding(true)
       setTranscodeProgress(0)
 
-      await saveVideoCapture(
-        chunks, mimeType, canvasRef.current, filter, params,
-        ({ stage, ratio }) => {
-          if (stage === 'transcoding') setTranscodeProgress(Math.round(ratio * 100))
-        }
-      )
-
-      setTranscoding(false)
-      setTranscodeProgress(0)
-      showToast('VIDEO SAVED ✓')
+      try {
+        await saveVideoCapture(
+          chunks, mimeType, canvasRef.current, filter, params,
+          ({ stage, ratio }) => {
+            if (stage === 'transcoding') setTranscodeProgress(Math.round(ratio * 100))
+          }
+        )
+        showToast('VIDEO SAVED ✓')
+      } catch (e) {
+        console.error('Save failed:', e)
+        showToast('SAVE FAILED — check console')
+      } finally {
+        setTranscoding(false)
+        setTranscodeProgress(0)
+      }
     } else {
       try {
         await recorder.start()
+        if (flash.flashMode === 'on') await flash.startTorch()
         showToast(hasAudio ? '● REC + AUDIO' : '● REC (no mic)')
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Recording failed'
@@ -71,6 +80,7 @@ export function CameraView() {
 
   const handlePhoto = async () => {
     if (!canvasRef.current) return
+    await flash.photoFlash()
     await capturePhoto(canvasRef.current, filter, params)
     showToast('PHOTO SAVED ✓')
   }
@@ -92,6 +102,7 @@ export function CameraView() {
             duration={recorder.duration}
             filter={filter}
             hasAudio={hasAudio}
+            torchActive={flash.torchActive}
           />
         )}
 
@@ -100,15 +111,18 @@ export function CameraView() {
         )}
 
         {transcoding && (
-          <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center gap-4 z-40">
+          <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center gap-5 z-40">
             <p className="text-yellow-300 text-xs tracking-widest font-mono">CONVERTING TO MP4...</p>
-            <div className="w-48 h-1 bg-zinc-800 rounded-full overflow-hidden">
+            <div className="w-56 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
               <div
-                className="h-full bg-yellow-400 rounded-full transition-all duration-300"
-                style={{ width: `${transcodeProgress}%` }}
+                className="h-full bg-yellow-400 rounded-full transition-all duration-500"
+                style={{ width: transcodeProgress > 0 ? `${transcodeProgress}%` : '15%' }}
               />
             </div>
-            <p className="text-zinc-600 text-[10px] tracking-widest font-mono">{transcodeProgress}%</p>
+            <p className="text-zinc-600 text-[10px] tracking-widest font-mono">
+              {transcodeProgress > 0 ? `${transcodeProgress}%` : 'LOADING ENCODER...'}
+            </p>
+            <p className="text-zinc-700 text-[9px] tracking-widest font-mono">DO NOT CLOSE THIS PAGE</p>
           </div>
         )}
 
@@ -127,10 +141,13 @@ export function CameraView() {
         onRecord={handleRecord}
         onPhoto={handlePhoto}
         onFlip={flip}
+        onFlashCycle={flash.cycleFlash}
         recording={recorder.status === 'recording'}
         cameraReady={cameraReady && !transcoding}
         filter={filter}
         hasAudio={hasAudio}
+        flashMode={flash.flashMode}
+        flashSupported={flash.supported}
       />
     </div>
   )

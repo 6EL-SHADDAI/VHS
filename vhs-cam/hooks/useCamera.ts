@@ -65,5 +65,5 @@ export function useCamera() {
 
   useEffect(() => () => { stop() }, [stop])
 
-  return { videoRef, audioRef, status, error, facing, hasAudio, start, flip, stop }
+  return { videoRef, audioRef, streamRef, status, error, facing, hasAudio, start, flip, stop }
 }

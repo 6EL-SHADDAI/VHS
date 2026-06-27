@@ -35,7 +35,6 @@ export function useRecorder(
       throw new Error('Canvas stream has no video tracks')
     }
 
-    // Merge video + audio into a single stream
     const combined = new MediaStream()
     canvasStream.getVideoTracks().forEach(t => combined.addTrack(t))
     audioRef.current?.getAudioTracks().forEach(t => combined.addTrack(t))

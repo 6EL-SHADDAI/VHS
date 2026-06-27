@@ -10,13 +10,14 @@ function formatTimecode(seconds: number): string {
 }
 
 interface Props {
-  recording: boolean
-  duration:  number
-  filter:    FilterMode
-  hasAudio:  boolean
+  recording:   boolean
+  duration:    number
+  filter:      FilterMode
+  hasAudio:    boolean
+  torchActive: boolean
 }
 
-export function VHSViewfinder({ recording, duration, hasAudio }: Props) {
+export function VHSViewfinder({ recording, duration, hasAudio, torchActive }: Props) {
   const [frame, setFrame]     = useState(0)
   const [visible, setVisible] = useState(true)
 
@@ -46,9 +47,8 @@ export function VHSViewfinder({ recording, duration, hasAudio }: Props) {
           >
             {recording ? 'REC' : 'STBY'}
           </span>
-          {recording && hasAudio && (
-            <span className="text-[9px] text-red-400/70 tracking-widest">🎙</span>
-          )}
+          {recording && hasAudio && <span className="text-[9px] text-red-400/70">🎙</span>}
+          {torchActive && <span className="text-[11px] text-yellow-300" style={{ textShadow: '0 0 6px rgba(253,224,71,0.8)' }}>🔦</span>}
         </div>
         <div className="text-[9px] text-zinc-600 tracking-widest">SP ● HI-FI</div>
       </div>
