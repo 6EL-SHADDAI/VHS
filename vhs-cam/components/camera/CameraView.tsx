@@ -54,9 +54,7 @@ export function CameraView() {
       try {
         await saveVideoCapture(
           chunks, mimeType, canvasRef.current, filter, params,
-          ({ stage, ratio }) => {
-            if (stage === 'transcoding') setTranscodeProgress(Math.round(ratio * 100))
-          }
+          (msg) => { setTranscoding(true); setToast(msg) }
         )
         showToast('VIDEO SAVED ✓')
       } catch (e) {
@@ -112,16 +110,10 @@ export function CameraView() {
 
         {transcoding && (
           <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center gap-5 z-40">
-            <p className="text-yellow-300 text-xs tracking-widest font-mono">CONVERTING TO MP4...</p>
+            <p className="text-yellow-300 text-xs tracking-widest font-mono">{toast ?? 'PROCESSING...'}</p>
             <div className="w-56 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-yellow-400 rounded-full transition-all duration-500"
-                style={{ width: transcodeProgress > 0 ? `${transcodeProgress}%` : '15%' }}
-              />
+              <div className="h-full bg-yellow-400 rounded-full animate-pulse" style={{ width: '60%' }} />
             </div>
-            <p className="text-zinc-600 text-[10px] tracking-widest font-mono">
-              {transcodeProgress > 0 ? `${transcodeProgress}%` : 'LOADING ENCODER...'}
-            </p>
             <p className="text-zinc-700 text-[9px] tracking-widest font-mono">DO NOT CLOSE THIS PAGE</p>
           </div>
         )}
