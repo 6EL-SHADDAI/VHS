@@ -47,7 +47,6 @@ export function useVHSRenderer(
 
   useEffect(() => {
     if (!active) return
-
     if (!glStateRef.current && canvasRef.current) initRenderer()
 
     let running = true

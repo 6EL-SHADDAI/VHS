@@ -1,5 +1,5 @@
 'use client'
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import { useCamera } from '@/hooks/useCamera'
 import { useRecorder } from '@/hooks/useRecorder'
 import { useVHSRenderer } from '@/hooks/useVHSRenderer'
@@ -15,28 +15,47 @@ import type { FilterMode, FilterParams } from '@/types'
 export function CameraView() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const { videoRef, audioRef, streamRef, status, error, hasAudio, start, flip } = useCamera()
-  const recorder = useRecorder(canvasRef, audioRef)
-  const flash    = useFlash(streamRef)
+  const recorder  = useRecorder(canvasRef, audioRef)
+  const flash     = useFlash(streamRef)
 
   const [filter, setFilter] = useState<FilterMode>('vhs')
   const [params, setParams] = useState<FilterParams>(FILTER_PRESETS['vhs'])
   const [toast, setToast]   = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const cameraReady = status === 'ready'
   useVHSRenderer(canvasRef, videoRef, filter, params, cameraReady)
 
-  const showToast = useCallback((msg: string) => {
+  const showToast = useCallback((msg: string, duration = 2500) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current)
     setToast(msg)
-    setTimeout(() => setToast(null), 2500)
+    toastTimer.current = setTimeout(() => setToast(null), duration)
   }, [])
 
-  const handleFilterChange = (f: FilterMode) => {
+  // Auto-start camera on mount
+  useEffect(() => {
+    start('environment')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Resume stream when returning from gallery
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && status === 'ready') {
+        const video = videoRef.current
+        if (video?.paused) video.play().catch(() => {})
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [status, videoRef])
+
+  const handleFilterChange = useCallback((f: FilterMode) => {
     setFilter(f)
     setParams(FILTER_PRESETS[f])
-  }
+  }, [])
 
-  const handleRecord = async () => {
+  const handleRecord = useCallback(async () => {
     if (recorder.status === 'recording') {
       await flash.stopTorch()
       const { chunks, mimeType } = await recorder.stop()
@@ -48,7 +67,7 @@ export function CameraView() {
       if (!canvasRef.current) return
 
       setSaving(true)
-      showToast('SAVING...')
+      showToast('SAVING...', 10000)
 
       try {
         await saveVideoCapture(chunks, mimeType, canvasRef.current, filter, params)
@@ -58,6 +77,8 @@ export function CameraView() {
         showToast('SAVE FAILED')
       } finally {
         setSaving(false)
+        const video = videoRef.current
+        if (video?.paused) video.play().catch(() => {})
       }
     } else {
       try {
@@ -69,24 +90,29 @@ export function CameraView() {
         showToast('ERR: ' + msg.slice(0, 40))
       }
     }
-  }
+  }, [recorder, flash, canvasRef, filter, params, hasAudio, showToast, videoRef])
 
-  const handlePhoto = async () => {
+  const handlePhoto = useCallback(async () => {
     if (!canvasRef.current) return
-    await flash.photoFlash()
-    await capturePhoto(canvasRef.current, filter, params)
-    showToast('PHOTO SAVED ✓')
-  }
+    try {
+      await flash.photoFlash()
+      await capturePhoto(canvasRef.current, filter, params)
+      showToast('PHOTO SAVED ✓')
+    } catch (e) {
+      console.error('Photo failed:', e)
+      showToast('PHOTO FAILED')
+    }
+  }, [canvasRef, filter, params, flash, showToast])
 
-  const handleParamChange = (key: keyof FilterParams, value: number) => {
+  const handleParamChange = useCallback((key: keyof FilterParams, value: number) => {
     setParams(p => ({ ...p, [key]: value }))
-  }
+  }, [])
 
   return (
-    <div className="relative w-full h-screen flex flex-col bg-black overflow-hidden">
+    <div className="relative w-full flex flex-col bg-black overflow-hidden" style={{ height: '100dvh' }}>
       <video ref={videoRef} className="hidden" playsInline muted />
 
-      <div className="relative flex-1 overflow-hidden bg-black">
+      <div className="relative flex-1 overflow-hidden bg-black min-h-0">
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover" />
 
         {cameraReady && (
@@ -104,7 +130,7 @@ export function CameraView() {
         )}
 
         {toast && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/85 border border-zinc-700 text-yellow-300 text-xs tracking-widest px-4 py-2 rounded z-50 pointer-events-none whitespace-nowrap">
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/90 border border-zinc-700 text-yellow-300 text-xs tracking-widest px-4 py-2 rounded-lg z-50 pointer-events-none whitespace-nowrap font-mono">
             {toast}
           </div>
         )}
