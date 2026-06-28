@@ -1,5 +1,4 @@
 'use client'
-import Link from 'next/link'
 import type { FlashMode } from '@/hooks/useFlash'
 import type { FilterMode, FilterParams } from '@/types'
 
@@ -10,6 +9,7 @@ interface Props {
   onPhoto:        () => void
   onFlip:         () => void
   onFlashCycle:   () => void
+  onGallery:      () => void
   recording:      boolean
   cameraReady:    boolean
   filter:         FilterMode
@@ -37,7 +37,7 @@ const FLASH_COLOR: Record<FlashMode, string> = {
 }
 
 export function VHSControls({
-  params, onParamChange, onRecord, onPhoto, onFlip, onFlashCycle,
+  params, onParamChange, onRecord, onPhoto, onFlip, onFlashCycle, onGallery,
   recording, cameraReady, hasAudio, flashMode, flashSupported,
 }: Props) {
   return (
@@ -84,17 +84,20 @@ export function VHSControls({
         ))}
       </div>
 
-      <div className="flex items-center justify-between px-6 pt-2 pb-5">
+      <div className="flex items-center justify-between px-5 pt-2 pb-5">
 
-        <div className="flex flex-col items-center gap-1.5 w-14">
-          <Link href="/gallery">
-            <button className="w-14 h-14 rounded-full border border-zinc-800 bg-zinc-900 flex items-center justify-center active:scale-95 transition-transform">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-                <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-              </svg>
-            </button>
-          </Link>
+        <div className="flex flex-col items-center gap-1.5" style={{ width: 56 }}>
+          <button
+            onClick={onGallery}
+            className="w-14 h-14 rounded-full border border-zinc-800 bg-zinc-900 flex items-center justify-center active:scale-95 transition-transform"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1"/>
+              <rect x="14" y="3" width="7" height="7" rx="1"/>
+              <rect x="3" y="14" width="7" height="7" rx="1"/>
+              <rect x="14" y="14" width="7" height="7" rx="1"/>
+            </svg>
+          </button>
           <span className="text-[9px] text-zinc-700 tracking-widest font-mono">GALLERY</span>
         </div>
 
@@ -107,7 +110,7 @@ export function VHSControls({
           >
             <span className={`absolute inset-0 rounded-full border-4 transition-all duration-300 ${
               recording
-                ? 'border-red-400 shadow-[0_0_0_4px_rgba(239,68,68,0.25),0_0_32px_rgba(239,68,68,0.5)]'
+                ? 'border-red-400 shadow-[0_0_0_4px_rgba(239,68,68,0.25),0_0_32px_rgba(239,68,68,0.6)]'
                 : 'border-red-700'
             }`} />
             <span className={`rounded-full transition-all duration-300 flex items-center justify-center ${
@@ -126,7 +129,7 @@ export function VHSControls({
           </span>
         </div>
 
-        <div className="flex flex-col items-center gap-2 w-14">
+        <div className="flex flex-col items-center gap-2" style={{ width: 56 }}>
           <div className="flex flex-col items-center gap-1">
             <button
               onClick={onPhoto}
@@ -152,7 +155,7 @@ export function VHSControls({
             )}
             <button
               onClick={onFlip}
-              className="w-9 h-9 rounded-full border border-zinc-800 bg-zinc-900 flex items-center justify-center active:scale-95 transition-transform"
+              className={`rounded-full border border-zinc-800 bg-zinc-900 flex items-center justify-center active:scale-95 transition-transform ${flashSupported ? 'w-9 h-9' : 'w-11 h-11'}`}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71717a" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M1 4v6h6"/><path d="M23 20v-6h-6"/>

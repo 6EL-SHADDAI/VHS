@@ -1,21 +1,26 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { getAllCaptures, deleteCapture } from '@/lib/db/gallery'
 import type { CaptureItem } from '@/types'
 
-export function GalleryView() {
-  const router = useRouter()
-  const [items, setItems]     = useState<CaptureItem[]>([])
-  const [loaded, setLoaded]   = useState(false)
-  const [preview, setPreview] = useState<CaptureItem | null>(null)
+interface Props {
+  visible: boolean
+  onClose: () => void
+}
+
+export function GalleryOverlay({ visible, onClose }: Props) {
+  const [items, setItems]           = useState<CaptureItem[]>([])
+  const [loaded, setLoaded]         = useState(false)
+  const [preview, setPreview]       = useState<CaptureItem | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!visible) return
+    setLoaded(false)
     getAllCaptures()
       .then(all => { setItems([...all].reverse()); setLoaded(true) })
       .catch(() => setLoaded(true))
-  }, [])
+  }, [visible])
 
   useEffect(() => {
     if (!preview) { setPreviewUrl(null); return }
@@ -23,6 +28,13 @@ export function GalleryView() {
     setPreviewUrl(url)
     return () => URL.revokeObjectURL(url)
   }, [preview])
+
+  useEffect(() => {
+    if (!visible) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [visible, onClose])
 
   const handleDelete = useCallback(async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -42,16 +54,21 @@ export function GalleryView() {
     setTimeout(() => URL.revokeObjectURL(url), 3000)
   }, [])
 
+  if (!visible) return null
+
   return (
     <div
-      className="bg-black font-mono flex flex-col"
-      style={{ height: '100dvh', overflow: 'hidden' }}
+      className="absolute inset-0 z-40 flex flex-col bg-black font-mono"
+      style={{ height: '100%' }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-900 shrink-0">
+      <div
+        className="flex items-center justify-between px-4 shrink-0 border-b border-zinc-900"
+        style={{ paddingTop: 'max(env(safe-area-inset-top), 12px)', paddingBottom: 12 }}
+      >
         <button
-          onClick={() => router.push('/camera')}
-          className="text-zinc-500 text-sm tracking-widest active:text-zinc-300 transition-colors px-1 py-1"
+          onClick={onClose}
+          className="text-zinc-400 text-sm tracking-widest py-2 pr-6 active:text-white transition-colors"
         >
           ← BACK
         </button>
@@ -59,38 +76,42 @@ export function GalleryView() {
         <span className="text-zinc-700 text-xs">{items.length} ITEMS</span>
       </div>
 
-      {/* Loading */}
       {!loaded && (
         <div className="flex-1 flex items-center justify-center text-zinc-700 text-xs tracking-widest">
           LOADING...
         </div>
       )}
 
-      {/* Empty */}
       {loaded && items.length === 0 && (
         <div className="flex-1 flex flex-col items-center justify-center gap-4">
           <p className="text-zinc-700 text-xs tracking-widest">NO CAPTURES YET</p>
           <button
-            onClick={() => router.push('/camera')}
-            className="border border-zinc-800 text-zinc-500 text-xs px-5 py-2.5 rounded-lg active:border-zinc-600 active:text-zinc-300 transition-colors tracking-widest"
+            onClick={onClose}
+            className="border border-zinc-800 text-zinc-500 text-xs px-5 py-3 rounded-xl active:border-zinc-600 active:text-zinc-300 tracking-widest"
           >
-            OPEN CAMERA
+            BACK TO CAMERA
           </button>
         </div>
       )}
 
-      {/* Grid */}
       {loaded && items.length > 0 && (
         <div
           className="grid grid-cols-3 gap-px p-px"
-          style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'scroll',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            alignContent: 'start',
+          } as React.CSSProperties}
         >
           {items.map(item => (
             <button
               key={item.id}
               onClick={() => setPreview(item)}
-              className="relative bg-zinc-950 active:opacity-80 transition-opacity"
-              style={{ aspectRatio: '16/9' }}
+              className="relative bg-zinc-950 active:opacity-70"
+              style={{ aspectRatio: '16/9', display: 'block' }}
             >
               <img
                 src={item.thumbnail}
@@ -98,12 +119,14 @@ export function GalleryView() {
                 className="w-full h-full object-cover"
                 loading="lazy"
               />
-              <div className="absolute top-1 left-1 text-[8px] text-yellow-400/80 tracking-widest bg-black/60 px-1.5 py-0.5 rounded font-mono">
+              <div className="absolute top-1 left-1 text-[7px] text-yellow-400/80 tracking-widest bg-black/70 px-1 py-0.5 rounded font-mono">
                 {item.filter.toUpperCase()}
               </div>
               {item.type === 'video' && (
-                <div className="absolute bottom-1 left-1 text-[8px] text-red-400/80 tracking-widest bg-black/60 px-1.5 py-0.5 rounded font-mono">
-                  ▶ VID
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-8 h-8 rounded-full bg-black/60 flex items-center justify-center">
+                    <span className="text-white text-xs ml-0.5">▶</span>
+                  </div>
                 </div>
               )}
             </button>
@@ -111,26 +134,20 @@ export function GalleryView() {
         </div>
       )}
 
-      {/* Preview modal */}
+      {/* Preview */}
       {preview && previewUrl && (
-        <div
-          className="absolute inset-0 bg-black/95 flex flex-col z-50"
-          onClick={() => setPreview(null)}
-        >
-          <div
-            className="flex items-center justify-between px-4 py-3 shrink-0"
-            onClick={e => e.stopPropagation()}
-          >
+        <div className="absolute inset-0 bg-black z-50 flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 shrink-0 border-b border-zinc-900">
             <button
               onClick={() => setPreview(null)}
-              className="text-zinc-400 text-sm tracking-widest px-1 py-1 active:text-white"
+              className="text-zinc-400 text-sm tracking-widest py-1 pr-4 active:text-white"
             >
-              ✕ CLOSE
+              ← BACK
             </button>
-            <span className="text-zinc-600 text-[10px] tracking-widest font-mono">
-              {preview.filter.toUpperCase()} · {preview.type.toUpperCase()}
+            <span className="text-zinc-600 text-[10px] tracking-widest">
+              {preview.filter.toUpperCase()}
             </span>
-            <div className="flex gap-4">
+            <div className="flex items-center gap-4">
               <button
                 onClick={e => handleDownload(preview, e)}
                 className="text-yellow-400 text-xs tracking-widest active:text-yellow-200 py-1"
@@ -146,10 +163,7 @@ export function GalleryView() {
             </div>
           </div>
 
-          <div
-            className="flex-1 flex items-center justify-center p-4 min-h-0"
-            onClick={e => e.stopPropagation()}
-          >
+          <div className="flex-1 flex items-center justify-center p-3 min-h-0 bg-black">
             {preview.type === 'photo' ? (
               <img
                 src={previewUrl}
@@ -163,7 +177,7 @@ export function GalleryView() {
                 playsInline
                 autoPlay
                 className="max-w-full max-h-full rounded"
-                style={{ maxHeight: 'calc(100dvh - 120px)' }}
+                style={{ maxHeight: 'calc(100dvh - 140px)' }}
               />
             )}
           </div>

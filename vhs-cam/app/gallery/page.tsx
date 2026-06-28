@@ -1,5 +1,5 @@
-import { GalleryView } from '@/components/gallery/GalleryView'
+import { GalleryView } from '@/components/gallery/GalleryOverlay'
 
 export default function GalleryPage() {
-  return <GalleryView />
+  return null 
 }

@@ -4,28 +4,40 @@ import { useCamera } from '@/hooks/useCamera'
 import { useRecorder } from '@/hooks/useRecorder'
 import { useVHSRenderer } from '@/hooks/useVHSRenderer'
 import { useFlash } from '@/hooks/useFlash'
+import { useZoom } from '@/hooks/useZoom'
 import { capturePhoto, saveVideoCapture } from '@/lib/capture'
 import { FILTER_PRESETS, FILTER_LABELS } from '@/lib/filters/presets'
 import { VHSViewfinder } from './VHSViewfinder'
 import { VHSControls } from './VHSControls'
 import { FilterStrip } from './FilterStrip'
 import { NoSignal } from './NoSignal'
+import { GalleryOverlay } from '../gallery/GalleryOverlay'
 import type { FilterMode, FilterParams } from '@/types'
 
 export function CameraView() {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const { videoRef, audioRef, streamRef, status, error, hasAudio, start, flip } = useCamera()
-  const recorder  = useRecorder(canvasRef, audioRef)
-  const flash     = useFlash(streamRef)
+  const viewfinderRef = useRef<HTMLDivElement>(null)
+  const canvasRef     = useRef<HTMLCanvasElement>(null)
 
-  const [filter, setFilter] = useState<FilterMode>('vhs')
-  const [params, setParams] = useState<FilterParams>(FILTER_PRESETS['vhs'])
-  const [toast, setToast]   = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
+  const { videoRef, audioRef, streamRef, status, error, hasAudio, start, flip } = useCamera()
+  const recorder = useRecorder(canvasRef, audioRef)
+  const flash    = useFlash(streamRef)
+  const zoom     = useZoom(streamRef)
+
+  const [filter, setFilter]           = useState<FilterMode>('vhs')
+  const [params, setParams]           = useState<FilterParams>(FILTER_PRESETS['vhs'])
+  const [toast, setToast]             = useState<string | null>(null)
+  const [saving, setSaving]           = useState(false)
+  const [showGallery, setShowGallery] = useState(false)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const cameraReady = status === 'ready'
   useVHSRenderer(canvasRef, videoRef, filter, params, cameraReady)
+
+  useEffect(() => {
+    if (!viewfinderRef.current) return
+    const cleanup = zoom.attachPinch(viewfinderRef.current)
+    return cleanup
+  }, [zoom.attachPinch]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const showToast = useCallback((msg: string, duration = 2500) => {
     if (toastTimer.current) clearTimeout(toastTimer.current)
@@ -33,22 +45,9 @@ export function CameraView() {
     toastTimer.current = setTimeout(() => setToast(null), duration)
   }, [])
 
-  // Auto-start camera on mount
   useEffect(() => {
     start('environment')
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Resume stream when returning from gallery
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === 'visible' && status === 'ready') {
-        const video = videoRef.current
-        if (video?.paused) video.play().catch(() => {})
-      }
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [status, videoRef])
 
   const handleFilterChange = useCallback((f: FilterMode) => {
     setFilter(f)
@@ -67,7 +66,7 @@ export function CameraView() {
       if (!canvasRef.current) return
 
       setSaving(true)
-      showToast('SAVING...', 10000)
+      showToast('SAVING...', 15000)
 
       try {
         await saveVideoCapture(chunks, mimeType, canvasRef.current, filter, params)
@@ -78,7 +77,10 @@ export function CameraView() {
       } finally {
         setSaving(false)
         const video = videoRef.current
-        if (video?.paused) video.play().catch(() => {})
+        if (video) {
+          video.srcObject = streamRef.current
+          if (video.paused) video.play().catch(() => {})
+        }
       }
     } else {
       try {
@@ -90,7 +92,7 @@ export function CameraView() {
         showToast('ERR: ' + msg.slice(0, 40))
       }
     }
-  }, [recorder, flash, canvasRef, filter, params, hasAudio, showToast, videoRef])
+  }, [recorder, flash, canvasRef, filter, params, hasAudio, showToast, videoRef, streamRef])
 
   const handlePhoto = useCallback(async () => {
     if (!canvasRef.current) return
@@ -112,7 +114,7 @@ export function CameraView() {
     <div className="relative w-full flex flex-col bg-black overflow-hidden" style={{ height: '100dvh' }}>
       <video ref={videoRef} className="hidden" playsInline muted />
 
-      <div className="relative flex-1 overflow-hidden bg-black min-h-0">
+      <div ref={viewfinderRef} className="relative flex-1 overflow-hidden bg-black min-h-0">
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover" />
 
         {cameraReady && (
@@ -127,6 +129,12 @@ export function CameraView() {
 
         {!cameraReady && (
           <NoSignal status={status} error={error} onEnable={() => start('environment')} />
+        )}
+
+        {zoom.supported && zoom.zoom > zoom.minZoom + 0.05 && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 border border-zinc-700 text-yellow-300 text-xs tracking-widest px-3 py-1 rounded-full font-mono pointer-events-none">
+            {zoom.zoom.toFixed(1)}×
+          </div>
         )}
 
         {toast && (
@@ -145,12 +153,18 @@ export function CameraView() {
         onPhoto={handlePhoto}
         onFlip={flip}
         onFlashCycle={flash.cycleFlash}
+        onGallery={() => setShowGallery(true)}
         recording={recorder.status === 'recording'}
         cameraReady={cameraReady && !saving}
         filter={filter}
         hasAudio={hasAudio}
         flashMode={flash.flashMode}
         flashSupported={flash.supported}
+      />
+
+      <GalleryOverlay
+        visible={showGallery}
+        onClose={() => setShowGallery(false)}
       />
     </div>
   )
