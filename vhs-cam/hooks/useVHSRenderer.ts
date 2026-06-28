@@ -4,13 +4,8 @@ import { initGL, resizeGL, renderFrame, GLState } from '@/lib/camera/webgl'
 import type { FilterMode, FilterParams } from '@/types'
 
 const MODE_MAP: Record<FilterMode, number> = {
-  'vhs':        0,
-  'vhs-c':      1,
-  'glitch':     2,
-  'night':      3,
-  'film':       0,
-  'disposable': 0,
-  'polaroid':   0,
+  'vhs': 0, 'vhs-c': 1, 'glitch': 2, 'night': 3,
+  'film': 0, 'disposable': 0, 'polaroid': 0,
 }
 
 export function useVHSRenderer(
@@ -23,6 +18,11 @@ export function useVHSRenderer(
   const glStateRef = useRef<GLState | null>(null)
   const animRef    = useRef<number>(0)
   const startTime  = useRef(Date.now())
+  const paramsRef  = useRef(params)
+  const filterRef  = useRef(filter)
+
+  useEffect(() => { paramsRef.current = params }, [params])
+  useEffect(() => { filterRef.current = filter }, [filter])
 
   const initRenderer = useCallback(() => {
     if (!canvasRef.current) return
@@ -46,26 +46,48 @@ export function useVHSRenderer(
   }, [canvasRef, initRenderer])
 
   useEffect(() => {
-    if (!active || !glStateRef.current) return
+    if (!active) return
+
+    if (!glStateRef.current && canvasRef.current) initRenderer()
+
+    let running = true
+
     const loop = () => {
+      if (!running) return
       const video = videoRef.current
       const state = glStateRef.current
       if (video && state && video.readyState >= 2) {
+        if (video.paused) video.play().catch(() => {})
+        const p = paramsRef.current
         renderFrame(state, video, {
           time:     (Date.now() - startTime.current) / 1000,
-          glitch:   params.glitch,
-          noise:    params.noise,
-          blur:     params.blur,
-          warmth:   params.warmth,
-          contrast: params.contrast,
-          vignette: params.vignette,
-          bloom:    params.bloom,
-          mode:     MODE_MAP[filter] ?? 0,
+          glitch:   p.glitch,
+          noise:    p.noise,
+          blur:     p.blur,
+          warmth:   p.warmth,
+          contrast: p.contrast,
+          vignette: p.vignette,
+          bloom:    p.bloom,
+          mode:     MODE_MAP[filterRef.current] ?? 0,
         })
       }
       animRef.current = requestAnimationFrame(loop)
     }
+
     animRef.current = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(animRef.current)
-  }, [active, filter, params, videoRef])
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && running) {
+        cancelAnimationFrame(animRef.current)
+        animRef.current = requestAnimationFrame(loop)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      running = false
+      cancelAnimationFrame(animRef.current)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [active, canvasRef, videoRef, initRenderer])
 }

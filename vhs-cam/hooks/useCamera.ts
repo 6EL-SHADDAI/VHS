@@ -63,6 +63,23 @@ export function useCamera() {
     setHasAudio(false)
   }, [])
 
+  useEffect(() => {
+    const onVisible = async () => {
+      if (document.visibilityState === 'visible') {
+        const video  = videoRef.current
+        const stream = streamRef.current
+        if (video && stream && status === 'ready') {
+          if (video.paused || video.srcObject !== stream) {
+            video.srcObject = stream
+            try { await video.play() } catch {}
+          }
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [status])
+
   useEffect(() => () => { stop() }, [stop])
 
   return { videoRef, audioRef, streamRef, status, error, facing, hasAudio, start, flip, stop }
