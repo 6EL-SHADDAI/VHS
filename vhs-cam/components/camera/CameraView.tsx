@@ -31,6 +31,8 @@ export function CameraView() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const cameraReady = status === 'ready'
+
+  // NEVER gate render loop on saving — that's what causes the freeze
   useVHSRenderer(canvasRef, videoRef, filter, params, cameraReady)
 
   useEffect(() => {
@@ -76,9 +78,10 @@ export function CameraView() {
         showToast('SAVE FAILED')
       } finally {
         setSaving(false)
-        const video = videoRef.current
-        if (video) {
-          video.srcObject = streamRef.current
+        const video  = videoRef.current
+        const stream = streamRef.current
+        if (video && stream) {
+          if (video.srcObject !== stream) video.srcObject = stream
           if (video.paused) video.play().catch(() => {})
         }
       }
@@ -137,7 +140,17 @@ export function CameraView() {
           </div>
         )}
 
-        {toast && (
+        {/* Saving spinner — over live viewfinder, never stops the camera */}
+        {saving && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-30 pointer-events-none">
+            <div className="bg-black/90 border border-zinc-700 rounded-xl px-6 py-4 flex flex-col items-center gap-3">
+              <div className="w-6 h-6 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+              <span className="text-yellow-300 text-xs tracking-widest font-mono">SAVING...</span>
+            </div>
+          </div>
+        )}
+
+        {toast && !saving && (
           <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/90 border border-zinc-700 text-yellow-300 text-xs tracking-widest px-4 py-2 rounded-lg z-50 pointer-events-none whitespace-nowrap font-mono">
             {toast}
           </div>
