@@ -63,7 +63,7 @@ export function CameraView() {
       // captureStream() can leave the canvas's WebGL context in a corrupted
       // state on mobile browsers. Force a full context recreation right now
       // rather than waiting for the render loop to detect failed frames.
-      forceReinit()
+      //forceReinit()
 
       // Also verify the camera track itself survived recording — some
       // mobile browsers kill the underlying track when MediaRecorder
