@@ -5,33 +5,39 @@ import { useRecorder } from '@/hooks/useRecorder'
 import { useVHSRenderer } from '@/hooks/useVHSRenderer'
 import { useFlash } from '@/hooks/useFlash'
 import { useZoom } from '@/hooks/useZoom'
+import { useStamp } from '@/hooks/useStamp'
+import { drawStamp } from '@/lib/stamp'
 import { capturePhoto, saveVideoCapture } from '@/lib/capture'
 import { FILTER_PRESETS, FILTER_LABELS } from '@/lib/filters/presets'
 import { VHSViewfinder } from './VHSViewfinder'
 import { VHSControls } from './VHSControls'
 import { FilterStrip } from './FilterStrip'
 import { NoSignal } from './NoSignal'
+import { StampControls } from './StampControls'
 import { GalleryOverlay } from '../gallery/GalleryOverlay'
 import type { FilterMode, FilterParams } from '@/types'
 
 export function CameraView() {
-  const viewfinderRef = useRef<HTMLDivElement>(null)
-  const canvasRef     = useRef<HTMLCanvasElement>(null)
+  const viewfinderRef  = useRef<HTMLDivElement>(null)
+  const canvasRef      = useRef<HTMLCanvasElement>(null)
+  const stampCanvasRef = useRef<HTMLCanvasElement>(null)
+  const compositeRef   = useRef<HTMLCanvasElement>(null)
 
   const { videoRef, audioRef, streamRef, status, error, hasAudio, start, flip } = useCamera()
-  const recorder = useRecorder(canvasRef, audioRef)
-  const flash    = useFlash(streamRef)
-  const zoom     = useZoom(streamRef)
+  const recorder  = useRecorder(compositeRef, audioRef)
+  const flash     = useFlash(streamRef)
+  const zoom      = useZoom(streamRef)
+  const stampHook = useStamp()
 
   const [filter, setFilter]           = useState<FilterMode>('vhs')
   const [params, setParams]           = useState<FilterParams>(FILTER_PRESETS['vhs'])
   const [toast, setToast]             = useState<string | null>(null)
   const [saving, setSaving]           = useState(false)
   const [showGallery, setShowGallery] = useState(false)
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const toastTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const stampAnimRef = useRef<number>(0)
 
   const cameraReady = status === 'ready'
-
   const { forceReinit } = useVHSRenderer(canvasRef, videoRef, filter, params, cameraReady)
 
   useEffect(() => {
@@ -39,6 +45,53 @@ export function CameraView() {
     const cleanup = zoom.attachPinch(viewfinderRef.current)
     return cleanup
   }, [zoom.attachPinch]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Composite loop — blits WebGL + stamp onto composite canvas (what recorder captures)
+  useEffect(() => {
+    const composite = compositeRef.current
+    if (!composite) return
+    const ctx = composite.getContext('2d')
+    if (!ctx) return
+
+    const draw = () => {
+      const glCanvas    = canvasRef.current
+      const stampCanvas = stampCanvasRef.current
+
+      if (glCanvas && glCanvas.width > 0) {
+        if (composite.width !== glCanvas.width || composite.height !== glCanvas.height) {
+          composite.width  = glCanvas.width
+          composite.height = glCanvas.height
+        }
+        if (stampCanvas && (stampCanvas.width !== glCanvas.width || stampCanvas.height !== glCanvas.height)) {
+          stampCanvas.width  = glCanvas.width
+          stampCanvas.height = glCanvas.height
+        }
+
+        ctx.drawImage(glCanvas, 0, 0)
+
+        if (stampHook.stamp.enabled) {
+          drawStamp(ctx, composite.width, composite.height, stampHook.stamp)
+
+          // Mirror stamp to the visible overlay canvas
+          if (stampCanvas) {
+            const sCtx = stampCanvas.getContext('2d')
+            if (sCtx) {
+              sCtx.clearRect(0, 0, stampCanvas.width, stampCanvas.height)
+              drawStamp(sCtx, stampCanvas.width, stampCanvas.height, stampHook.stamp)
+            }
+          }
+        } else if (stampCanvasRef.current) {
+          const sCtx = stampCanvasRef.current.getContext('2d')
+          sCtx?.clearRect(0, 0, stampCanvasRef.current.width, stampCanvasRef.current.height)
+        }
+      }
+
+      stampAnimRef.current = requestAnimationFrame(draw)
+    }
+
+    stampAnimRef.current = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(stampAnimRef.current)
+  }, [stampHook.stamp])
 
   const showToast = useCallback((msg: string, duration = 2500) => {
     if (toastTimer.current) clearTimeout(toastTimer.current)
@@ -60,15 +113,8 @@ export function CameraView() {
       await flash.stopTorch()
       const { chunks, mimeType } = await recorder.stop()
 
-      // captureStream() can leave the canvas's WebGL context in a corrupted
-      // state on mobile browsers. Force a full context recreation right now
-      // rather than waiting for the render loop to detect failed frames.
-      //forceReinit()
+      forceReinit()
 
-      // Also verify the camera track itself survived recording — some
-      // mobile browsers kill the underlying track when MediaRecorder
-      // finishes. If it's dead, restart the camera immediately rather
-      // than leaving the viewfinder frozen on the last frame.
       const liveTrack = streamRef.current?.getVideoTracks()[0]
       if (!liveTrack || liveTrack.readyState === 'ended') {
         console.warn('[VHS] Camera track died after recording — auto-restarting')
@@ -79,13 +125,15 @@ export function CameraView() {
         showToast('NO DATA — use Chrome or Edge')
         return
       }
-      if (!canvasRef.current) return
+
+      const thumbCanvas = compositeRef.current ?? canvasRef.current
+      if (!thumbCanvas) return
 
       setSaving(true)
       showToast('SAVING...', 15000)
 
       try {
-        await saveVideoCapture(chunks, mimeType, canvasRef.current, filter, params)
+        await saveVideoCapture(chunks, mimeType, thumbCanvas, filter, params)
         showToast('VIDEO SAVED ✓')
       } catch (e) {
         console.error('Save failed:', e)
@@ -112,10 +160,11 @@ export function CameraView() {
   }, [recorder, flash, canvasRef, filter, params, hasAudio, showToast, videoRef, streamRef, forceReinit, start])
 
   const handlePhoto = useCallback(async () => {
-    if (!canvasRef.current) return
+    const captureCanvas = compositeRef.current ?? canvasRef.current
+    if (!captureCanvas) return
     try {
       await flash.photoFlash()
-      await capturePhoto(canvasRef.current, filter, params)
+      await capturePhoto(captureCanvas, filter, params)
       showToast('PHOTO SAVED ✓')
     } catch (e) {
       console.error('Photo failed:', e)
@@ -130,9 +179,16 @@ export function CameraView() {
   return (
     <div className="relative w-full flex flex-col bg-black overflow-hidden" style={{ height: '100dvh' }}>
       <video ref={videoRef} className="hidden" playsInline muted />
+      <canvas ref={compositeRef} className="hidden" />
 
       <div ref={viewfinderRef} className="relative flex-1 overflow-hidden bg-black min-h-0">
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover" />
+
+        <canvas
+          ref={stampCanvasRef}
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          style={{ zIndex: 5 }}
+        />
 
         {cameraReady && (
           <VHSViewfinder
@@ -149,7 +205,7 @@ export function CameraView() {
         )}
 
         {zoom.supported && zoom.zoom > zoom.minZoom + 0.05 && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 border border-zinc-700 text-yellow-300 text-xs tracking-widest px-3 py-1 rounded-full font-mono pointer-events-none">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 border border-zinc-700 text-yellow-300 text-xs tracking-widest px-3 py-1 rounded-full font-mono pointer-events-none" style={{ zIndex: 15 }}>
             {zoom.zoom.toFixed(1)}×
           </div>
         )}
@@ -171,6 +227,14 @@ export function CameraView() {
       </div>
 
       <FilterStrip current={filter} onChange={handleFilterChange} labels={FILTER_LABELS} />
+
+      <StampControls
+        stampEnabled={stampHook.enabled}
+        locationEnabled={stampHook.locationEnabled}
+        locationStatus={stampHook.locationStatus}
+        onToggleStamp={() => stampHook.setEnabled((e: boolean) => !e)}
+        onToggleLocation={stampHook.toggleLocation}
+      />
 
       <VHSControls
         params={params}
