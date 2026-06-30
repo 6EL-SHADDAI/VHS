@@ -56,13 +56,14 @@ vec3 lumaBlur(vec2 uv, float amt){
 vec3 chromaBlur(vec2 uv, float amt){
   float h = amt * 0.018;
   vec3 s = vec3(0.0);
-  s += texture2D(u_video, clamp(uv+vec2(-h*3.,0.),0.,1.)).rgb * 0.05;
-  s += texture2D(u_video, clamp(uv+vec2(-h*2.,0.),0.,1.)).rgb * 0.10;
-  s += texture2D(u_video, clamp(uv+vec2(-h,   0.),0.,1.)).rgb * 0.20;
-  s += texture2D(u_video, clamp(uv,              0.,1.)).rgb   * 0.30;
-  s += texture2D(u_video, clamp(uv+vec2( h,   0.),0.,1.)).rgb * 0.20;
-  s += texture2D(u_video, clamp(uv+vec2( h*2.,0.),0.,1.)).rgb * 0.10;
-  s += texture2D(u_video, clamp(uv+vec2( h*3.,0.),0.,1.)).rgb * 0.05;
+  // x: clamp (no horizontal wrap), y: wrap via fract (droop pushes y out of [0,1])
+  s += texture2D(u_video, vec2(clamp(uv.x-h*3.,0.,1.), fract(uv.y))).rgb * 0.05;
+  s += texture2D(u_video, vec2(clamp(uv.x-h*2.,0.,1.), fract(uv.y))).rgb * 0.10;
+  s += texture2D(u_video, vec2(clamp(uv.x-h,   0.,1.), fract(uv.y))).rgb * 0.20;
+  s += texture2D(u_video, vec2(clamp(uv.x,     0.,1.), fract(uv.y))).rgb * 0.30;
+  s += texture2D(u_video, vec2(clamp(uv.x+h,   0.,1.), fract(uv.y))).rgb * 0.20;
+  s += texture2D(u_video, vec2(clamp(uv.x+h*2.,0.,1.), fract(uv.y))).rgb * 0.10;
+  s += texture2D(u_video, vec2(clamp(uv.x+h*3.,0.,1.), fract(uv.y))).rgb * 0.05;
   return s;
 }
 
@@ -101,7 +102,8 @@ vec3 applyVHS(vec2 uv, float t){
   float luma    = dot(lumaRGB, vec3(0.299, 0.587, 0.114));
 
   float droopY   = 2.5 / 240.0;
-  vec2  uvChroma = clamp(vec2(uvJ.x, uvJ.y + droopY), 0.0, 1.0);
+  // Wrap instead of clamp — clamping smears the bottom rows into a flat band
+  vec2  uvChroma = vec2(uvJ.x, fract(uvJ.y + droopY));
 
   float rBleed = blur * 0.7 + 0.8;
   float bBleed = blur * 0.5 + 0.6;
@@ -281,7 +283,8 @@ vec3 applyDisposable(vec2 uv, float t){
   float luma    = dot(lumaRGB, vec3(0.299, 0.587, 0.114));
 
   float droopY   = 1.2 / 240.0;
-  vec2  uvChroma = clamp(vec2(uvJ.x, uvJ.y + droopY), 0.0, 1.0);
+  // Wrap instead of clamp — clamping smears the bottom rows into a flat band
+  vec2  uvChroma = vec2(uvJ.x, fract(uvJ.y + droopY));
 
   float rBleed = blur * 0.7 + 0.4;
   float bBleed = blur * 0.5 + 0.3;

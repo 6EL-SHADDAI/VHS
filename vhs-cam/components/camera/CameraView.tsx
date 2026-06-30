@@ -32,8 +32,7 @@ export function CameraView() {
 
   const cameraReady = status === 'ready'
 
-  // NEVER gate render loop on saving — that's what causes the freeze
-  useVHSRenderer(canvasRef, videoRef, filter, params, cameraReady)
+  const { forceReinit } = useVHSRenderer(canvasRef, videoRef, filter, params, cameraReady)
 
   useEffect(() => {
     if (!viewfinderRef.current) return
@@ -60,6 +59,21 @@ export function CameraView() {
     if (recorder.status === 'recording') {
       await flash.stopTorch()
       const { chunks, mimeType } = await recorder.stop()
+
+      // captureStream() can leave the canvas's WebGL context in a corrupted
+      // state on mobile browsers. Force a full context recreation right now
+      // rather than waiting for the render loop to detect failed frames.
+      forceReinit()
+
+      // Also verify the camera track itself survived recording — some
+      // mobile browsers kill the underlying track when MediaRecorder
+      // finishes. If it's dead, restart the camera immediately rather
+      // than leaving the viewfinder frozen on the last frame.
+      const liveTrack = streamRef.current?.getVideoTracks()[0]
+      if (!liveTrack || liveTrack.readyState === 'ended') {
+        console.warn('[VHS] Camera track died after recording — auto-restarting')
+        start()
+      }
 
       if (chunks.length === 0) {
         showToast('NO DATA — use Chrome or Edge')
@@ -95,7 +109,7 @@ export function CameraView() {
         showToast('ERR: ' + msg.slice(0, 40))
       }
     }
-  }, [recorder, flash, canvasRef, filter, params, hasAudio, showToast, videoRef, streamRef])
+  }, [recorder, flash, canvasRef, filter, params, hasAudio, showToast, videoRef, streamRef, forceReinit, start])
 
   const handlePhoto = useCallback(async () => {
     if (!canvasRef.current) return
@@ -140,7 +154,6 @@ export function CameraView() {
           </div>
         )}
 
-        {/* Saving spinner — over live viewfinder, never stops the camera */}
         {saving && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-30 pointer-events-none">
             <div className="bg-black/90 border border-zinc-700 rounded-xl px-6 py-4 flex flex-col items-center gap-3">
