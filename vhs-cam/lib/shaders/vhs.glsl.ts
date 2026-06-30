@@ -257,40 +257,94 @@ vec3 applyNightShot(vec2 uv, float t){
   return clamp(col, 0.0, 1.0);
 }
 
-vec3 applyCleanDisposable(vec2 uv, float t){
-  float noise    = u_noise    / 100.0;
-  float warmth   = u_warmth   / 100.0;
-  float contrast = u_contrast / 100.0;
-  float vignette = u_vignette / 100.0;
-  float bloom    = u_bloom    / 100.0;
+vec3 applyDisposable(vec2 uv, float t){
+  float glitch   = (u_glitch   / 100.0) * 0.5;
+  float noise    = (u_noise    / 100.0) * 0.5;
+  float blur     = (u_blur     / 100.0) * 0.5;
+  float warmth   =  u_warmth   / 100.0;
+  float contrast =  u_contrast / 100.0;
+  float vignette = (u_vignette / 100.0) * 0.6;
 
-  vec3 col = texture2D(u_video, uv).rgb;
+  float row    = floor(uv.y * 240.0);
+  float jitter = (rand(vec2(row, floor(t*24.0))) - 0.5) * glitch * 0.005;
 
-  vec3 blurred    = gaussBlur(uv, 1.2);
-  float lumaBlur2 = dot(blurred, vec3(0.299,0.587,0.114));
-  float bloomMask = smoothstep(0.55, 0.95, lumaBlur2);
-  col += blurred * bloomMask * bloom * 0.18;
+  float tSeed  = floor(t * 5.0);
+  float tBandY = rand(vec2(tSeed, 7.3));
+  float tBand  = smoothstep(0.035, 0.0, abs(uv.y - tBandY));
+  float tFire  = step(0.97, rand(vec2(tSeed, 2.1)));
+  jitter += tBand * tFire * glitch * 0.05;
+  jitter += sin(uv.y * 6.0 + t * 2.8) * glitch * 0.0012;
+
+  vec2 uvJ = clamp(vec2(uv.x + jitter, uv.y), 0.0, 1.0);
+
+  vec3  lumaRGB = lumaBlur(uvJ, blur * 0.6 + 0.5);
+  float luma    = dot(lumaRGB, vec3(0.299, 0.587, 0.114));
+
+  float droopY   = 1.2 / 240.0;
+  vec2  uvChroma = clamp(vec2(uvJ.x, uvJ.y + droopY), 0.0, 1.0);
+
+  float rBleed = blur * 0.7 + 0.4;
+  float bBleed = blur * 0.5 + 0.3;
+  vec3 chromaR = chromaBlur(clamp(vec2(uvChroma.x + 0.002 + glitch*0.008, uvChroma.y), 0.,1.), rBleed);
+  vec3 chromaG = chromaBlur(uvChroma, (rBleed+bBleed)*0.5);
+  vec3 chromaB = chromaBlur(clamp(vec2(uvChroma.x - 0.001 - glitch*0.003, uvChroma.y), 0.,1.), bBleed);
+
+  float cr = chromaR.r - dot(chromaR, vec3(0.299,0.587,0.114));
+  float cg = chromaG.g - dot(chromaG, vec3(0.299,0.587,0.114));
+  float cb = chromaB.b - dot(chromaB, vec3(0.299,0.587,0.114));
+
+  vec3 col = vec3(
+    luma + cr * 1.0,
+    luma + cg * 0.7,
+    luma + cb * 0.8
+  );
 
   col = col * 0.94 + 0.03;
-  col.r *= 1.0 + warmth * 0.10;
-  col.g *= 1.0 + warmth * 0.02;
-  col.b *= 1.0 - warmth * 0.06;
+
+  float hiMask = smoothstep(0.4, 0.9, luma);
+  col.r += hiMask * warmth * 0.08;
+  col.g += hiMask * warmth * 0.03;
+
+  col.r *= 1.0 + warmth * 0.12;
+  col.g *= 1.0 + warmth * 0.01;
+  col.b *= 1.0 - warmth * 0.08;
 
   vec3 yuv = rgb2yuv(col);
-  yuv.y *= 1.0 + warmth * 0.10;
-  yuv.z *= 1.0 + warmth * 0.13;
+  yuv.y *= 1.0 + warmth * 0.15;
+  yuv.z *= 1.0 + warmth * 0.18;
   col = yuv2rgb(yuv);
 
-  float c = 1.0 + contrast * 0.18;
-  col = (col - 0.5) * c + 0.5;
-  col = col - pow(max(col - 0.85, 0.0), vec3(1.0)) * 0.3;
+  col = (col - 0.5) * (1.0 + contrast * 0.22) + 0.5;
 
-  vec2 grainUV = uv * 1.2 + vec2(rand1(floor(t*8.0)*0.41), rand1(floor(t*8.0)*0.77));
-  float grain  = texture2D(u_grain, fract(grainUV)).r - 0.5;
-  col += grain * noise * 0.045;
+  float sl = 1.0 - smoothstep(0.25, 0.75, mod(uv.y * 240.0, 1.0)) * 0.03;
+  col *= sl;
 
-  float vig = uv.x*(1.-uv.x)*uv.y*(1.-uv.y) * 12.0;
-  col *= mix(1.0, pow(max(vig,0.0),0.4) * 0.25 + 0.75, vignette);
+  float crawl  = sin(uv.x * 180.0 - t * 9.0) * sin(uv.y * 180.0) * 0.5 + 0.5;
+  crawl        = step(0.88, crawl) * noise * 0.025;
+  float rEdge  = abs(cr - dot(chromaBlur(uvChroma+vec2(0.004,0.),rBleed), vec3(0.,-1.,1.)));
+  crawl       *= smoothstep(0.02, 0.08, rEdge);
+  col.r       += crawl;
+  col.g       -= crawl * 0.3;
+
+  vec2  gUV1    = fract(uv * 1.5 + vec2(rand1(floor(t*25.0)*0.31), rand1(floor(t*25.0)*0.77+1.)));
+  vec2  gUV2    = fract(uv * 2.8 + vec2(rand1(floor(t*25.0)*0.53+2.), rand1(floor(t*25.0)*0.19)));
+  float gR      = texture2D(u_grain, gUV1).r - 0.5;
+  float gG      = texture2D(u_grain, gUV2).r - 0.5;
+  float gB      = texture2D(u_grain, fract(gUV1 + vec2(0.3, 0.7))).r - 0.5;
+  float darkMask = 1.0 - smoothstep(0.0, 0.5, luma);
+  float noiseAmt = noise * (0.10 + darkMask * 0.08);
+  col.r += gR * noiseAmt * 1.2;
+  col.g += gG * noiseAmt * 0.7;
+  col.b += gB * noiseAmt * 1.1;
+
+  float headZone  = smoothstep(0.96, 1.0, uv.y);
+  float headNoise = (rand(vec2(uv.x * 300.0, floor(t*30.0)))-0.5) * 2.0;
+  col = mix(col, col * 0.7 + vec3(headNoise * 0.12), headZone * glitch * 0.7);
+
+  float vig = uv.x*(1.-uv.x)*uv.y*(1.-uv.y) * 18.0;
+  col *= mix(1.0, pow(max(vig,0.0),0.28) * 0.5 + 0.5, vignette);
+
+  col *= 1.0 + (rand1(floor(t * 18.0)) - 0.5) * glitch * 0.022;
 
   float leakDist = length(uv - vec2(0.92, 0.08));
   float leak = exp(-leakDist * leakDist * 8.0) * 0.06 * warmth;
@@ -305,7 +359,7 @@ void main(){
   else if (u_mode == 1) col = applyVHSC(v_uv, u_time);
   else if (u_mode == 2) col = applyGlitch(v_uv, u_time);
   else if (u_mode == 3) col = applyNightShot(v_uv, u_time);
-  else if (u_mode == 4) col = applyCleanDisposable(v_uv, u_time);
+  else if (u_mode == 4) col = applyDisposable(v_uv, u_time);
   else                  col = applyVHS(v_uv, u_time);
   gl_FragColor = vec4(col, 1.0);
 }
