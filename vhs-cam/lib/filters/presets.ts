@@ -13,11 +13,12 @@ export const FILTER_PRESETS: Record<FilterMode, FilterParams> = {
   'night': {
     glitch: 10, noise: 28, blur: 15, warmth: 0, contrast: 68, vignette: 70, bloom: 72,
   },
+  // CLEAN DISPOSABLE: nostalgic colour, minimal grain — sharp and readable
+  'disposable': {
+    glitch: 0, noise: 18, blur: 0, warmth: 65, contrast: 35, vignette: 40, bloom: 35,
+  },
   'film': {
     glitch: 5, noise: 38, blur: 14, warmth: 52, contrast: 48, vignette: 58, bloom: 18,
-  },
-  'disposable': {
-    glitch: 8, noise: 55, blur: 16, warmth: 68, contrast: 60, vignette: 50, bloom: 25,
   },
   'polaroid': {
     glitch: 4, noise: 25, blur: 20, warmth: 60, contrast: 28, vignette: 30, bloom: 12,
@@ -34,5 +35,5 @@ export const FILTER_LABELS: Record<FilterMode, string> = {
   'polaroid':   'POLAROID',
 }
 
-export const VHS_MODES  = new Set<FilterMode>(['vhs', 'vhs-c', 'glitch', 'night'])
-export const FILM_MODES = new Set<FilterMode>(['film', 'disposable', 'polaroid'])
+export const VHS_MODES  = new Set<FilterMode>(['vhs', 'vhs-c', 'glitch', 'night', 'disposable'])
+export const FILM_MODES = new Set<FilterMode>(['film', 'polaroid'])

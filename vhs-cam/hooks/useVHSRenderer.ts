@@ -5,7 +5,8 @@ import type { FilterMode, FilterParams } from '@/types'
 
 const MODE_MAP: Record<FilterMode, number> = {
   'vhs': 0, 'vhs-c': 1, 'glitch': 2, 'night': 3,
-  'film': 0, 'disposable': 0, 'polaroid': 0,
+  'disposable': 4,
+  'film': 0, 'polaroid': 0,
 }
 
 export function useVHSRenderer(
@@ -15,24 +16,57 @@ export function useVHSRenderer(
   params:    FilterParams,
   active:    boolean
 ) {
-  const glStateRef = useRef<GLState | null>(null)
-  const animRef    = useRef<number>(0)
-  const startTime  = useRef(Date.now())
-  const paramsRef  = useRef(params)
-  const filterRef  = useRef(filter)
+  const glStateRef    = useRef<GLState | null>(null)
+  const animRef        = useRef<number>(0)
+  const startTime       = useRef(Date.now())
+  const paramsRef       = useRef(params)
+  const filterRef       = useRef(filter)
+  const failCountRef    = useRef(0)
+  const reinitInFlight  = useRef(false)
 
   useEffect(() => { paramsRef.current = params }, [params])
   useEffect(() => { filterRef.current = filter }, [filter])
 
+  const forceReinit = useCallback(() => {
+    if (reinitInFlight.current) return
+    reinitInFlight.current = true
+
+    const canvas = canvasRef.current
+    if (!canvas) { reinitInFlight.current = false; return }
+
+    try {
+      const old = glStateRef.current?.gl
+      if (old) {
+        const ext = old.getExtension('WEBGL_lose_context')
+        ext?.loseContext()
+      }
+    } catch {}
+
+    glStateRef.current = null
+    failCountRef.current = 0
+
+    requestAnimationFrame(() => {
+      try {
+        glStateRef.current = initGL(canvas, () => {
+          forceReinit()
+        })
+        resizeGL(glStateRef.current.gl, canvas)
+      } catch (e) {
+        console.error('[VHS] forceReinit failed:', e)
+      }
+      reinitInFlight.current = false
+    })
+  }, [canvasRef])
+
   const initRenderer = useCallback(() => {
     if (!canvasRef.current) return
     try {
-      glStateRef.current = initGL(canvasRef.current)
+      glStateRef.current = initGL(canvasRef.current, () => forceReinit())
       resizeGL(glStateRef.current.gl, canvasRef.current)
     } catch (e) {
       console.error('WebGL init failed:', e)
     }
-  }, [canvasRef])
+  }, [canvasRef, forceReinit])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -53,12 +87,15 @@ export function useVHSRenderer(
 
     const loop = () => {
       if (!running) return
+
       const video = videoRef.current
       const state = glStateRef.current
+
       if (video && state && video.readyState >= 2) {
         if (video.paused) video.play().catch(() => {})
+
         const p = paramsRef.current
-        renderFrame(state, video, {
+        const ok = renderFrame(state, video, {
           time:     (Date.now() - startTime.current) / 1000,
           glitch:   p.glitch,
           noise:    p.noise,
@@ -69,7 +106,17 @@ export function useVHSRenderer(
           bloom:    p.bloom,
           mode:     MODE_MAP[filterRef.current] ?? 0,
         })
+
+        if (!ok) {
+          failCountRef.current += 1
+          if (failCountRef.current >= 3) {
+            forceReinit()
+          }
+        } else {
+          failCountRef.current = 0
+        }
       }
+
       animRef.current = requestAnimationFrame(loop)
     }
 
@@ -88,5 +135,7 @@ export function useVHSRenderer(
       cancelAnimationFrame(animRef.current)
       document.removeEventListener('visibilitychange', onVisible)
     }
-  }, [active, canvasRef, videoRef, initRenderer])
+  }, [active, canvasRef, videoRef, initRenderer, forceReinit])
+
+  return { forceReinit }
 }

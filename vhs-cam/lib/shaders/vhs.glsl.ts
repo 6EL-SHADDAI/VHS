@@ -257,12 +257,55 @@ vec3 applyNightShot(vec2 uv, float t){
   return clamp(col, 0.0, 1.0);
 }
 
+vec3 applyCleanDisposable(vec2 uv, float t){
+  float noise    = u_noise    / 100.0;
+  float warmth   = u_warmth   / 100.0;
+  float contrast = u_contrast / 100.0;
+  float vignette = u_vignette / 100.0;
+  float bloom    = u_bloom    / 100.0;
+
+  vec3 col = texture2D(u_video, uv).rgb;
+
+  vec3 blurred    = gaussBlur(uv, 1.2);
+  float lumaBlur2 = dot(blurred, vec3(0.299,0.587,0.114));
+  float bloomMask = smoothstep(0.55, 0.95, lumaBlur2);
+  col += blurred * bloomMask * bloom * 0.18;
+
+  col = col * 0.94 + 0.03;
+  col.r *= 1.0 + warmth * 0.10;
+  col.g *= 1.0 + warmth * 0.02;
+  col.b *= 1.0 - warmth * 0.06;
+
+  vec3 yuv = rgb2yuv(col);
+  yuv.y *= 1.0 + warmth * 0.10;
+  yuv.z *= 1.0 + warmth * 0.13;
+  col = yuv2rgb(yuv);
+
+  float c = 1.0 + contrast * 0.18;
+  col = (col - 0.5) * c + 0.5;
+  col = col - pow(max(col - 0.85, 0.0), vec3(1.0)) * 0.3;
+
+  vec2 grainUV = uv * 1.2 + vec2(rand1(floor(t*8.0)*0.41), rand1(floor(t*8.0)*0.77));
+  float grain  = texture2D(u_grain, fract(grainUV)).r - 0.5;
+  col += grain * noise * 0.045;
+
+  float vig = uv.x*(1.-uv.x)*uv.y*(1.-uv.y) * 12.0;
+  col *= mix(1.0, pow(max(vig,0.0),0.4) * 0.25 + 0.75, vignette);
+
+  float leakDist = length(uv - vec2(0.92, 0.08));
+  float leak = exp(-leakDist * leakDist * 8.0) * 0.06 * warmth;
+  col += vec3(leak * 1.2, leak * 0.6, leak * 0.1);
+
+  return clamp(col, 0.0, 1.0);
+}
+
 void main(){
   vec3 col;
   if      (u_mode == 0) col = applyVHS(v_uv, u_time);
   else if (u_mode == 1) col = applyVHSC(v_uv, u_time);
   else if (u_mode == 2) col = applyGlitch(v_uv, u_time);
   else if (u_mode == 3) col = applyNightShot(v_uv, u_time);
+  else if (u_mode == 4) col = applyCleanDisposable(v_uv, u_time);
   else                  col = applyVHS(v_uv, u_time);
   gl_FragColor = vec4(col, 1.0);
 }

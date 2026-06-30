@@ -5,6 +5,7 @@ export type GLState = {
   program: WebGLProgram
   videoTexture: WebGLTexture
   grainTexture: WebGLTexture
+  lost: boolean
 }
 
 function compileShader(gl: WebGLRenderingContext, src: string, type: number): WebGLShader {
@@ -17,11 +18,12 @@ function compileShader(gl: WebGLRenderingContext, src: string, type: number): We
   return shader
 }
 
-export function initGL(canvas: HTMLCanvasElement): GLState {
+export function initGL(canvas: HTMLCanvasElement, onContextLost?: () => void): GLState {
   const gl = canvas.getContext('webgl', {
     preserveDrawingBuffer: true,
     antialias: false,
     alpha: false,
+    desynchronized: false,
   }) as WebGLRenderingContext
   if (!gl) throw new Error('WebGL not supported')
 
@@ -41,12 +43,22 @@ export function initGL(canvas: HTMLCanvasElement): GLState {
   gl.enableVertexAttribArray(posLoc)
   gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0)
 
-  return {
+  const state: GLState = {
     gl,
     program,
     videoTexture: createVideoTexture(gl),
     grainTexture: createGrainTexture(gl),
+    lost: false,
   }
+
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault()
+    state.lost = true
+    console.warn('[VHS] WebGL context lost')
+    onContextLost?.()
+  }, { once: true })
+
+  return state
 }
 
 function createVideoTexture(gl: WebGLRenderingContext): WebGLTexture {
@@ -90,28 +102,47 @@ export function renderFrame(
     time: number; glitch: number; noise: number; blur: number
     warmth: number; contrast: number; vignette: number; bloom: number; mode: number
   }
-) {
+): boolean {
   const { gl, program, videoTexture, grainTexture } = state
 
-  gl.activeTexture(gl.TEXTURE0)
-  gl.bindTexture(gl.TEXTURE_2D, videoTexture)
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video)
+  if (state.lost || gl.isContextLost()) {
+    state.lost = true
+    return false
+  }
 
-  gl.activeTexture(gl.TEXTURE1)
-  gl.bindTexture(gl.TEXTURE_2D, grainTexture)
+  try {
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, videoTexture)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video)
 
-  const u = (name: string) => gl.getUniformLocation(program, name)
-  gl.uniform1i(u('u_video'),    0)
-  gl.uniform1i(u('u_grain'),    1)
-  gl.uniform1f(u('u_time'),     uniforms.time)
-  gl.uniform1f(u('u_glitch'),   uniforms.glitch)
-  gl.uniform1f(u('u_noise'),    uniforms.noise)
-  gl.uniform1f(u('u_blur'),     uniforms.blur)
-  gl.uniform1f(u('u_warmth'),   uniforms.warmth)
-  gl.uniform1f(u('u_contrast'), uniforms.contrast)
-  gl.uniform1f(u('u_vignette'), uniforms.vignette)
-  gl.uniform1f(u('u_bloom'),    uniforms.bloom)
-  gl.uniform1i(u('u_mode'),     uniforms.mode)
+    gl.activeTexture(gl.TEXTURE1)
+    gl.bindTexture(gl.TEXTURE_2D, grainTexture)
 
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    const u = (name: string) => gl.getUniformLocation(program, name)
+    gl.uniform1i(u('u_video'),    0)
+    gl.uniform1i(u('u_grain'),    1)
+    gl.uniform1f(u('u_time'),     uniforms.time)
+    gl.uniform1f(u('u_glitch'),   uniforms.glitch)
+    gl.uniform1f(u('u_noise'),    uniforms.noise)
+    gl.uniform1f(u('u_blur'),     uniforms.blur)
+    gl.uniform1f(u('u_warmth'),   uniforms.warmth)
+    gl.uniform1f(u('u_contrast'), uniforms.contrast)
+    gl.uniform1f(u('u_vignette'), uniforms.vignette)
+    gl.uniform1f(u('u_bloom'),    uniforms.bloom)
+    gl.uniform1i(u('u_mode'),     uniforms.mode)
+
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+
+    const err = gl.getError()
+    if (err !== gl.NO_ERROR) {
+      console.warn('[VHS] GL error during render:', err)
+      return false
+    }
+
+    return true
+  } catch (e) {
+    console.error('[VHS] renderFrame threw:', e)
+    state.lost = true
+    return false
+  }
 }
