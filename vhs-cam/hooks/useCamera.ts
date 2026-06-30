@@ -45,6 +45,11 @@ export function useCamera() {
       })
 
       streamRef.current = videoStream
+      console.log('[CAMERA] Got stream', videoStream.id)
+console.log(
+  '[CAMERA] Track state',
+  videoStream.getVideoTracks()[0]?.readyState
+)
 
       const track = videoStream.getVideoTracks()[0]
       if (track) {
@@ -76,11 +81,30 @@ export function useCamera() {
       }
 
       if (videoRef.current) {
-        videoRef.current.srcObject = videoStream
-        videoRef.current.playsInline = true
-        videoRef.current.muted = true
-        await videoRef.current.play()
-      }
+  const video = videoRef.current
+
+  video.pause()
+  video.srcObject = null
+
+  // Give the browser one frame to detach the old stream
+  await new Promise(resolve => requestAnimationFrame(resolve))
+
+  video.srcObject = videoStream
+  video.playsInline = true
+  video.muted = true
+
+  console.log('[CAMERA] Attached stream', videoStream.id)
+
+  try {
+    await video.play()
+    console.log('[CAMERA] Video playing', {
+      readyState: video.readyState,
+      paused: video.paused,
+    })
+  } catch (e) {
+    console.error('[CAMERA] video.play failed', e)
+  }
+}
 
       facingRef.current = facingMode
       setFacingState(facingMode)

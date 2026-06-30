@@ -4,35 +4,48 @@ import { initGL, resizeGL, renderFrame, GLState } from '@/lib/camera/webgl'
 import type { FilterMode, FilterParams } from '@/types'
 
 const MODE_MAP: Record<FilterMode, number> = {
-  'vhs': 0, 'vhs-c': 1, 'glitch': 2, 'night': 3,
+  'vhs': 0,
+  'vhs-c': 1,
+  'glitch': 2,
+  'night': 3,
   'disposable': 4,
-  'film': 0, 'polaroid': 0,
+  'film': 0,
+  'polaroid': 0,
 }
 
 export function useVHSRenderer(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
-  videoRef:  React.RefObject<HTMLVideoElement | null>,
-  filter:    FilterMode,
-  params:    FilterParams,
-  active:    boolean
+  videoRef: React.RefObject<HTMLVideoElement | null>,
+  filter: FilterMode,
+  params: FilterParams,
+  active: boolean
 ) {
-  const glStateRef    = useRef<GLState | null>(null)
-  const animRef        = useRef<number>(0)
-  const startTime       = useRef(Date.now())
-  const paramsRef       = useRef(params)
-  const filterRef       = useRef(filter)
-  const failCountRef    = useRef(0)
-  const reinitInFlight  = useRef(false)
+  const glStateRef = useRef<GLState | null>(null)
+  const animRef = useRef<number>(0)
+  const startTime = useRef(Date.now())
+  const paramsRef = useRef(params)
+  const filterRef = useRef(filter)
+  const failCountRef = useRef(0)
+  const reinitInFlight = useRef(false)
+  const lastLogRef = useRef(0)
 
-  useEffect(() => { paramsRef.current = params }, [params])
-  useEffect(() => { filterRef.current = filter }, [filter])
+  useEffect(() => {
+    paramsRef.current = params
+  }, [params])
+
+  useEffect(() => {
+    filterRef.current = filter
+  }, [filter])
 
   const forceReinit = useCallback(() => {
     if (reinitInFlight.current) return
     reinitInFlight.current = true
 
     const canvas = canvasRef.current
-    if (!canvas) { reinitInFlight.current = false; return }
+    if (!canvas) {
+      reinitInFlight.current = false
+      return
+    }
 
     try {
       const old = glStateRef.current?.gl
@@ -60,6 +73,7 @@ export function useVHSRenderer(
 
   const initRenderer = useCallback(() => {
     if (!canvasRef.current) return
+
     try {
       glStateRef.current = initGL(canvasRef.current, () => forceReinit())
       resizeGL(glStateRef.current.gl, canvasRef.current)
@@ -71,17 +85,25 @@ export function useVHSRenderer(
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+
     initRenderer()
+
     const onResize = () => {
-      if (glStateRef.current) resizeGL(glStateRef.current.gl, canvas)
+      if (glStateRef.current) {
+        resizeGL(glStateRef.current.gl, canvas)
+      }
     }
+
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [canvasRef, initRenderer])
 
   useEffect(() => {
     if (!active) return
-    if (!glStateRef.current && canvasRef.current) initRenderer()
+
+    if (!glStateRef.current && canvasRef.current) {
+      initRenderer()
+    }
 
     let running = true
 
@@ -91,20 +113,34 @@ export function useVHSRenderer(
       const video = videoRef.current
       const state = glStateRef.current
 
+      // Log once per second for debugging
+      if (video && Date.now() - lastLogRef.current > 1000) {
+        lastLogRef.current = Date.now()
+
+        console.log('[VIDEO STATE]', {
+          readyState: video.readyState,
+          paused: video.paused,
+          srcObject: !!video.srcObject,
+        })
+      }
+
       if (video && state && video.readyState >= 2) {
-        if (video.paused) video.play().catch(() => {})
+        if (video.paused) {
+          video.play().catch(() => {})
+        }
 
         const p = paramsRef.current
+
         const ok = renderFrame(state, video, {
-          time:     (Date.now() - startTime.current) / 1000,
-          glitch:   p.glitch,
-          noise:    p.noise,
-          blur:     p.blur,
-          warmth:   p.warmth,
+          time: (Date.now() - startTime.current) / 1000,
+          glitch: p.glitch,
+          noise: p.noise,
+          blur: p.blur,
+          warmth: p.warmth,
           contrast: p.contrast,
           vignette: p.vignette,
-          bloom:    p.bloom,
-          mode:     MODE_MAP[filterRef.current] ?? 0,
+          bloom: p.bloom,
+          mode: MODE_MAP[filterRef.current] ?? 0,
         })
 
         if (!ok) {
@@ -128,6 +164,7 @@ export function useVHSRenderer(
         animRef.current = requestAnimationFrame(loop)
       }
     }
+
     document.addEventListener('visibilitychange', onVisible)
 
     return () => {
