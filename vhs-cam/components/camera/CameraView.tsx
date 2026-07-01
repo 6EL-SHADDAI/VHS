@@ -7,6 +7,7 @@ import { useFlash } from '@/hooks/useFlash'
 import { useZoom } from '@/hooks/useZoom'
 import { useStamp } from '@/hooks/useStamp'
 import { drawStamp } from '@/lib/stamp'
+import type { StampRotation } from '@/lib/stamp'
 import { capturePhoto, saveVideoCapture } from '@/lib/capture'
 import { FILTER_PRESETS, FILTER_LABELS } from '@/lib/filters/presets'
 import { VHSViewfinder } from './VHSViewfinder'
@@ -29,11 +30,12 @@ export function CameraView() {
   const zoom      = useZoom(streamRef)
   const stampHook = useStamp()
 
-  const [filter, setFilter]           = useState<FilterMode>('vhs')
-  const [params, setParams]           = useState<FilterParams>(FILTER_PRESETS['vhs'])
-  const [toast, setToast]             = useState<string | null>(null)
-  const [saving, setSaving]           = useState(false)
-  const [showGallery, setShowGallery] = useState(false)
+  const [filter, setFilter]               = useState<FilterMode>('vhs')
+  const [params, setParams]               = useState<FilterParams>(FILTER_PRESETS['vhs'])
+  const [toast, setToast]                 = useState<string | null>(null)
+  const [saving, setSaving]               = useState(false)
+  const [showGallery, setShowGallery]     = useState(false)
+  const [stampRotation, setStampRotation] = useState<StampRotation>(0)
   const toastTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
   const stampAnimRef = useRef<number>(0)
 
@@ -54,44 +56,41 @@ export function CameraView() {
     if (!ctx) return
 
     const draw = () => {
-      const glCanvas    = canvasRef.current
-      const stampCanvas = stampCanvasRef.current
-
+      const glCanvas = canvasRef.current
       if (glCanvas && glCanvas.width > 0) {
         if (composite.width !== glCanvas.width || composite.height !== glCanvas.height) {
           composite.width  = glCanvas.width
           composite.height = glCanvas.height
         }
-        if (stampCanvas && (stampCanvas.width !== glCanvas.width || stampCanvas.height !== glCanvas.height)) {
-          stampCanvas.width  = glCanvas.width
-          stampCanvas.height = glCanvas.height
-        }
 
+        // 1. Blit WebGL output
         ctx.drawImage(glCanvas, 0, 0)
 
+        // 2. Draw stamp on composite (burned into recording)
         if (stampHook.stamp.enabled) {
-          drawStamp(ctx, composite.width, composite.height, stampHook.stamp)
+          drawStamp(ctx, composite.width, composite.height, stampHook.stamp, stampRotation)
+        }
 
-          // Mirror stamp to the visible overlay canvas
-          if (stampCanvas) {
-            const sCtx = stampCanvas.getContext('2d')
-            if (sCtx) {
-              sCtx.clearRect(0, 0, stampCanvas.width, stampCanvas.height)
-              drawStamp(sCtx, stampCanvas.width, stampCanvas.height, stampHook.stamp)
+        // 3. Mirror stamp to visible overlay canvas
+        const sCanvas = stampCanvasRef.current
+        if (sCanvas) {
+          if (sCanvas.width !== composite.width)  sCanvas.width  = composite.width
+          if (sCanvas.height !== composite.height) sCanvas.height = composite.height
+          const sCtx = sCanvas.getContext('2d')
+          if (sCtx) {
+            sCtx.clearRect(0, 0, sCanvas.width, sCanvas.height)
+            if (stampHook.stamp.enabled) {
+              drawStamp(sCtx, sCanvas.width, sCanvas.height, stampHook.stamp, stampRotation)
             }
           }
-        } else if (stampCanvasRef.current) {
-          const sCtx = stampCanvasRef.current.getContext('2d')
-          sCtx?.clearRect(0, 0, stampCanvasRef.current.width, stampCanvasRef.current.height)
         }
       }
-
       stampAnimRef.current = requestAnimationFrame(draw)
     }
 
     stampAnimRef.current = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(stampAnimRef.current)
-  }, [stampHook.stamp])
+  }, [stampHook.stamp, stampRotation])
 
   const showToast = useCallback((msg: string, duration = 2500) => {
     if (toastTimer.current) clearTimeout(toastTimer.current)
@@ -176,6 +175,10 @@ export function CameraView() {
     setParams(p => ({ ...p, [key]: value }))
   }, [])
 
+  const cycleRotation = useCallback(() => {
+    setStampRotation(r => r === 0 ? 90 : r === 90 ? -90 : 0)
+  }, [])
+
   return (
     <div className="relative w-full flex flex-col bg-black overflow-hidden" style={{ height: '100dvh' }}>
       <video ref={videoRef} className="hidden" playsInline muted />
@@ -205,7 +208,10 @@ export function CameraView() {
         )}
 
         {zoom.supported && zoom.zoom > zoom.minZoom + 0.05 && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 border border-zinc-700 text-yellow-300 text-xs tracking-widest px-3 py-1 rounded-full font-mono pointer-events-none" style={{ zIndex: 15 }}>
+          <div
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 border border-zinc-700 text-yellow-300 text-xs tracking-widest px-3 py-1 rounded-full font-mono pointer-events-none"
+            style={{ zIndex: 15 }}
+          >
             {zoom.zoom.toFixed(1)}×
           </div>
         )}
@@ -232,8 +238,10 @@ export function CameraView() {
         stampEnabled={stampHook.enabled}
         locationEnabled={stampHook.locationEnabled}
         locationStatus={stampHook.locationStatus}
-        onToggleStamp={() => stampHook.setEnabled((e: boolean) => !e)}
+        stampRotation={stampRotation}
+        onToggleStamp={() => stampHook.setEnabled(e => !e)}
         onToggleLocation={stampHook.toggleLocation}
+        onCycleRotation={cycleRotation}
       />
 
       <VHSControls

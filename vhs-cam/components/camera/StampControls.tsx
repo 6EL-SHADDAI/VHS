@@ -1,16 +1,25 @@
 'use client'
+import type { StampRotation } from '@/lib/stamp'
 
 interface Props {
   stampEnabled:     boolean
   locationEnabled:  boolean
   locationStatus:   'idle' | 'requesting' | 'ready' | 'denied'
+  stampRotation:    StampRotation
   onToggleStamp:    () => void
   onToggleLocation: () => void
+  onCycleRotation:  () => void
+}
+
+const ROTATION_LABEL: Record<string, string> = {
+  '0':   '↕ PORT',
+  '90':  '↻ CW',
+  '-90': '↺ CCW',
 }
 
 export function StampControls({
   stampEnabled, locationEnabled, locationStatus,
-  onToggleStamp, onToggleLocation,
+  stampRotation, onToggleStamp, onToggleLocation, onCycleRotation,
 }: Props) {
   const locLabel = () => {
     if (locationStatus === 'requesting') return 'LOCATING...'
@@ -21,6 +30,7 @@ export function StampControls({
 
   return (
     <div className="flex items-center gap-2 px-4 py-1.5 border-b border-zinc-900 bg-black">
+      {/* Timestamp toggle */}
       <button
         onClick={onToggleStamp}
         className={`flex items-center gap-1.5 px-3 py-1 rounded-md border text-[10px] font-mono tracking-widest transition-all active:scale-95 ${
@@ -30,9 +40,24 @@ export function StampControls({
         }`}
       >
         <span>{stampEnabled ? '◉' : '○'}</span>
-        <span>TIMESTAMP</span>
+        <span>DATE</span>
       </button>
 
+      {/* Rotation cycle */}
+      {stampEnabled && (
+        <button
+          onClick={onCycleRotation}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-md border text-[10px] font-mono tracking-widest transition-all active:scale-95 ${
+            stampRotation !== 0
+              ? 'border-yellow-500 text-yellow-300 bg-yellow-400/10'
+              : 'border-zinc-800 text-zinc-600'
+          }`}
+        >
+          {ROTATION_LABEL[String(stampRotation)]}
+        </button>
+      )}
+
+      {/* Location toggle */}
       {stampEnabled && (
         <button
           onClick={onToggleLocation}
