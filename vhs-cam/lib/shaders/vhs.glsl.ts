@@ -22,6 +22,12 @@ uniform float u_vignette;
 uniform float u_bloom;
 uniform int u_mode;
 
+// Per-frame "camcorder imperfection" state, set once in main() before
+// mode functions run, read by them below. GLSL executes main() top to
+// bottom so this is safe — no closures needed.
+float g_focusBoost;
+float g_expGain;
+
 float rand(vec2 co){ return fract(sin(dot(co,vec2(12.9898,78.233)))*43758.5453); }
 float rand1(float v){ return fract(sin(v*127.1)*43758.5453); }
 
@@ -40,6 +46,65 @@ vec3 yuv2rgb(vec3 y){
   ),0.0,1.0);
 }
 
+// ---------------------------------------------------------------------
+// Camcorder imperfection helpers (new)
+// ---------------------------------------------------------------------
+
+// Tiny handheld drift — a couple of slow, non-repeating sine sums so it
+// never looks like a perfect loop.
+vec2 camShake(float t){
+  float x = sin(t*1.3)*0.0009 + sin(t*3.7+1.0)*0.0004;
+  float y = cos(t*1.1+0.5)*0.0008 + sin(t*4.3+2.0)*0.0003;
+  return vec2(x, y);
+}
+
+// Slow focus drift + occasional "hunting" pulse, like autofocus
+// re-locking on a subject.
+float autofocusBreathing(float t){
+  float slow = (sin(t*0.6)*0.5+0.5) * 0.12;
+  float seed = floor(t*0.33);
+  float huntTrigger = step(0.90, rand(vec2(seed, 4.2)));
+  float hunt = huntTrigger * (sin(t*9.0)*0.5+0.5) * 0.30;
+  return slow + hunt;
+}
+
+// Slow exposure drift + rare "walked into a bright/dark area" pumps.
+float exposurePump(float t){
+  float slow = sin(t*0.15)*0.025 + sin(t*0.37+1.0)*0.018;
+  float seed = floor(t*0.5);
+  float huntTrigger = step(0.90, rand(vec2(seed, 3.7)));
+  float huntPulse = huntTrigger * (rand(vec2(seed, 8.1))-0.5) * 0.14;
+  return 1.0 + slow + huntPulse;
+}
+
+// Chroma drifts independently of luma on real tape — subtle horizontal
+// color-channel wander.
+float chromaWobble(float t){
+  return sin(t*2.3)*0.0009 + sin(t*5.1+2.0)*0.0005;
+}
+
+// Fakes 60i field interlace combing: every other scanline occasionally
+// gets a tiny horizontal offset out of sync with its neighbor.
+float fieldCombing(float row, float t, float glitch){
+  float field    = mod(floor(t*60.0), 2.0);
+  float rowParity = mod(row, 2.0);
+  float mismatch  = step(0.5, abs(rowParity - field));
+  return mismatch * glitch * 0.0032 * sin(t*47.0 + row);
+}
+
+// Rare bright horizontal dropout streak (oxide flaking off the tape).
+float dropoutMask(vec2 uv, float t){
+  float seed    = floor(t*8.0);
+  float chance  = rand(vec2(seed, 99.1));
+  float active  = step(0.986, chance);
+  float dropRow = rand(vec2(seed, 55.3)) * 240.0;
+  float rowPos  = uv.y * 240.0;
+  float width   = 1.4;
+  float mask    = smoothstep(width, 0.0, abs(rowPos - dropRow)) * active;
+  float flicker = 0.6 + 0.4 * rand(vec2(floor(uv.x*60.0), seed*3.0));
+  return mask * flicker;
+}
+
 vec3 lumaBlur(vec2 uv, float amt){
   float h = amt * 0.003;
   vec3 s = vec3(0.0);
@@ -56,7 +121,6 @@ vec3 lumaBlur(vec2 uv, float amt){
 vec3 chromaBlur(vec2 uv, float amt){
   float h = amt * 0.018;
   vec3 s = vec3(0.0);
-  // x: clamp (no horizontal wrap), y: wrap via fract (droop pushes y out of [0,1])
   s += texture2D(u_video, vec2(clamp(uv.x-h*3.,0.,1.), fract(uv.y))).rgb * 0.05;
   s += texture2D(u_video, vec2(clamp(uv.x-h*2.,0.,1.), fract(uv.y))).rgb * 0.10;
   s += texture2D(u_video, vec2(clamp(uv.x-h,   0.,1.), fract(uv.y))).rgb * 0.20;
@@ -78,16 +142,26 @@ vec3 gaussBlur(vec2 uv, float r){
   return c;
 }
 
+// Cheap bloom: brighten highlights by bleeding a wide blur of the raw
+// frame back in, weighted by how blown-out the pixel already is.
+vec3 applyHighlightBloom(vec3 col, vec2 uv){
+  float luma = dot(col, vec3(0.299, 0.587, 0.114));
+  float hi   = smoothstep(0.72, 1.0, luma);
+  vec3 blurred = gaussBlur(uv, 3.2);
+  return col + blurred * hi * 0.22;
+}
+
 vec3 applyVHS(vec2 uv, float t){
   float glitch   = u_glitch   / 100.0;
   float noise    = u_noise    / 100.0;
-  float blur     = u_blur     / 100.0;
+  float blur     = u_blur     / 100.0 + g_focusBoost;
   float warmth   = u_warmth   / 100.0;
   float contrast = u_contrast / 100.0;
   float vignette = u_vignette / 100.0;
 
   float row    = floor(uv.y * 240.0);
   float jitter = (rand(vec2(row, floor(t*24.0))) - 0.5) * glitch * 0.005;
+  jitter += fieldCombing(row, t, glitch);
 
   float tSeed  = floor(t * 5.0);
   float tBandY = rand(vec2(tSeed, 7.3));
@@ -102,14 +176,14 @@ vec3 applyVHS(vec2 uv, float t){
   float luma    = dot(lumaRGB, vec3(0.299, 0.587, 0.114));
 
   float droopY   = 2.5 / 240.0;
-  // Wrap instead of clamp — clamping smears the bottom rows into a flat band
   vec2  uvChroma = vec2(uvJ.x, fract(uvJ.y + droopY));
 
+  float wobble = chromaWobble(t);
   float rBleed = blur * 0.7 + 0.8;
   float bBleed = blur * 0.5 + 0.6;
-  vec3 chromaR = chromaBlur(clamp(vec2(uvChroma.x + 0.004 + glitch*0.008, uvChroma.y), 0.,1.), rBleed);
+  vec3 chromaR = chromaBlur(clamp(vec2(uvChroma.x + 0.004 + glitch*0.008 + wobble, uvChroma.y), 0.,1.), rBleed);
   vec3 chromaG = chromaBlur(uvChroma, (rBleed+bBleed)*0.5);
-  vec3 chromaB = chromaBlur(clamp(vec2(uvChroma.x - 0.002 - glitch*0.003, uvChroma.y), 0.,1.), bBleed);
+  vec3 chromaB = chromaBlur(clamp(vec2(uvChroma.x - 0.002 - glitch*0.003 - wobble*0.6, uvChroma.y), 0.,1.), bBleed);
 
   float cr = chromaR.r - dot(chromaR, vec3(0.299,0.587,0.114));
   float cg = chromaG.g - dot(chromaG, vec3(0.299,0.587,0.114));
@@ -234,7 +308,7 @@ vec3 applyNightShot(vec2 uv, float t){
   float blown      = smoothstep(clipThresh, clipThresh + 0.15, luma);
   luma             = mix(luma, 1.0, blown * 0.7);
 
-  vec3  blurRaw    = gaussBlur(uv, 2.0);
+  vec3  blurRaw    = gaussBlur(uv, 2.0 + g_focusBoost * 3.0);
   float lumaBlur2  = dot(blurRaw, vec3(0.299,0.587,0.114));
   float gainedBlur = 1.0 - pow(1.0 - pow(lumaBlur2, 0.55), 1.0/gain);
   float bloomAmt   = smoothstep(0.5, 0.9, gainedBlur) * bloom * 0.5;
@@ -262,13 +336,14 @@ vec3 applyNightShot(vec2 uv, float t){
 vec3 applyDisposable(vec2 uv, float t){
   float glitch   = (u_glitch   / 100.0) * 0.5;
   float noise    = (u_noise    / 100.0) * 0.5;
-  float blur     = (u_blur     / 100.0) * 0.5;
+  float blur     = (u_blur     / 100.0) * 0.5 + g_focusBoost * 0.7;
   float warmth   =  u_warmth   / 100.0;
   float contrast =  u_contrast / 100.0;
   float vignette = (u_vignette / 100.0) * 0.6;
 
   float row    = floor(uv.y * 240.0);
   float jitter = (rand(vec2(row, floor(t*24.0))) - 0.5) * glitch * 0.005;
+  jitter += fieldCombing(row, t, glitch);
 
   float tSeed  = floor(t * 5.0);
   float tBandY = rand(vec2(tSeed, 7.3));
@@ -283,14 +358,14 @@ vec3 applyDisposable(vec2 uv, float t){
   float luma    = dot(lumaRGB, vec3(0.299, 0.587, 0.114));
 
   float droopY   = 1.2 / 240.0;
-  // Wrap instead of clamp — clamping smears the bottom rows into a flat band
   vec2  uvChroma = vec2(uvJ.x, fract(uvJ.y + droopY));
 
+  float wobble = chromaWobble(t) * 0.7;
   float rBleed = blur * 0.7 + 0.4;
   float bBleed = blur * 0.5 + 0.3;
-  vec3 chromaR = chromaBlur(clamp(vec2(uvChroma.x + 0.002 + glitch*0.008, uvChroma.y), 0.,1.), rBleed);
+  vec3 chromaR = chromaBlur(clamp(vec2(uvChroma.x + 0.002 + glitch*0.008 + wobble, uvChroma.y), 0.,1.), rBleed);
   vec3 chromaG = chromaBlur(uvChroma, (rBleed+bBleed)*0.5);
-  vec3 chromaB = chromaBlur(clamp(vec2(uvChroma.x - 0.001 - glitch*0.003, uvChroma.y), 0.,1.), bBleed);
+  vec3 chromaB = chromaBlur(clamp(vec2(uvChroma.x - 0.001 - glitch*0.003 - wobble*0.6, uvChroma.y), 0.,1.), bBleed);
 
   float cr = chromaR.r - dot(chromaR, vec3(0.299,0.587,0.114));
   float cg = chromaG.g - dot(chromaG, vec3(0.299,0.587,0.114));
@@ -357,13 +432,29 @@ vec3 applyDisposable(vec2 uv, float t){
 }
 
 void main(){
+  vec2 shakeOff = camShake(u_time);
+  vec2 uv = clamp(v_uv + shakeOff, 0.0, 1.0);
+
+  g_focusBoost = autofocusBreathing(u_time);
+  g_expGain    = exposurePump(u_time);
+
   vec3 col;
-  if      (u_mode == 0) col = applyVHS(v_uv, u_time);
-  else if (u_mode == 1) col = applyVHSC(v_uv, u_time);
-  else if (u_mode == 2) col = applyGlitch(v_uv, u_time);
-  else if (u_mode == 3) col = applyNightShot(v_uv, u_time);
-  else if (u_mode == 4) col = applyDisposable(v_uv, u_time);
-  else                  col = applyVHS(v_uv, u_time);
-  gl_FragColor = vec4(col, 1.0);
+  if      (u_mode == 0) col = applyVHS(uv, u_time);
+  else if (u_mode == 1) col = applyVHSC(uv, u_time);
+  else if (u_mode == 2) col = applyGlitch(uv, u_time);
+  else if (u_mode == 3) col = applyNightShot(uv, u_time);
+  else if (u_mode == 4) col = applyDisposable(uv, u_time);
+  else                  col = applyVHS(uv, u_time);
+
+  if (u_mode != 3) {
+    col = applyHighlightBloom(col, uv);
+  }
+
+  col *= g_expGain;
+
+  float drop = dropoutMask(uv, u_time);
+  col = mix(col, vec3(1.0), drop * 0.75);
+
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }
 `
