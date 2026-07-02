@@ -37,9 +37,11 @@ export function createTapeAudioStream(micStream: MediaStream): TapeAudioResult |
   const hissDuration = 2 // seconds, looped seamlessly enough for hiss
   const hissBuffer = ctx.createBuffer(1, ctx.sampleRate * hissDuration, ctx.sampleRate)
   const hissData = hissBuffer.getChannelData(0)
+
   for (let i = 0; i < hissData.length; i++) {
     hissData[i] = Math.random() * 2 - 1
   }
+
   const hissSource = ctx.createBufferSource()
   hissSource.buffer = hissBuffer
   hissSource.loop = true
@@ -49,7 +51,7 @@ export function createTapeAudioStream(micStream: MediaStream): TapeAudioResult |
   hissFilter.frequency.value = 4000
 
   const hissGain = ctx.createGain()
-  hissGain.gain.value = 0.015 // quiet — texture, not noise
+  hissGain.gain.value = 0.0045 // 30% of original (0.015)
 
   hissSource.connect(hissFilter)
   hissFilter.connect(hissGain)
@@ -64,10 +66,10 @@ export function createTapeAudioStream(micStream: MediaStream): TapeAudioResult |
   humHarmonicOsc.frequency.value = 120
 
   const humGain = ctx.createGain()
-  humGain.gain.value = 0.006
+  humGain.gain.value = 0.0018 // 30% of original (0.006)
 
   const humHarmonicGain = ctx.createGain()
-  humHarmonicGain.gain.value = 0.003
+  humHarmonicGain.gain.value = 0.0009 // 30% of original (0.003)
 
   humOsc.connect(humGain)
   humHarmonicOsc.connect(humHarmonicGain)
@@ -76,13 +78,16 @@ export function createTapeAudioStream(micStream: MediaStream): TapeAudioResult |
   const wobbleOsc = ctx.createOscillator()
   wobbleOsc.type = 'sine'
   wobbleOsc.frequency.value = 0.3
+
   const wobbleGain = ctx.createGain()
-  wobbleGain.gain.value = 0.004
+  wobbleGain.gain.value = 0.0012 // 30% of original (0.004)
+
   wobbleOsc.connect(wobbleGain)
   wobbleGain.connect(hissGain.gain)
 
   // --- Mix bus ---
   const destination = ctx.createMediaStreamDestination()
+
   micGain.connect(destination)
   hissGain.connect(destination)
   humGain.connect(destination)
@@ -94,12 +99,29 @@ export function createTapeAudioStream(micStream: MediaStream): TapeAudioResult |
   wobbleOsc.start()
 
   const dispose = () => {
-    try { hissSource.stop() } catch {}
-    try { humOsc.stop() } catch {}
-    try { humHarmonicOsc.stop() } catch {}
-    try { wobbleOsc.stop() } catch {}
-    try { ctx.close() } catch {}
+    try {
+      hissSource.stop()
+    } catch {}
+
+    try {
+      humOsc.stop()
+    } catch {}
+
+    try {
+      humHarmonicOsc.stop()
+    } catch {}
+
+    try {
+      wobbleOsc.stop()
+    } catch {}
+
+    try {
+      ctx.close()
+    } catch {}
   }
 
-  return { stream: destination.stream, dispose }
+  return {
+    stream: destination.stream,
+    dispose,
+  }
 }
