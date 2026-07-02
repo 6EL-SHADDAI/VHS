@@ -1,14 +1,16 @@
 'use client'
-import type { StampRotation } from '@/lib/stamp'
+import type { StampRotation, StampScale } from '@/lib/stamp'
 
 interface Props {
   stampEnabled:     boolean
   locationEnabled:  boolean
   locationStatus:   'idle' | 'requesting' | 'ready' | 'denied'
   stampRotation:    StampRotation
+  stampScale:       StampScale
   onToggleStamp:    () => void
   onToggleLocation: () => void
   onCycleRotation:  () => void
+  onCycleScale:     () => void
 }
 
 const ROTATION_LABEL: Record<string, string> = {
@@ -19,7 +21,8 @@ const ROTATION_LABEL: Record<string, string> = {
 
 export function StampControls({
   stampEnabled, locationEnabled, locationStatus,
-  stampRotation, onToggleStamp, onToggleLocation, onCycleRotation,
+  stampRotation, stampScale,
+  onToggleStamp, onToggleLocation, onCycleRotation, onCycleScale,
 }: Props) {
   const locLabel = () => {
     if (locationStatus === 'requesting') return 'LOCATING...'
@@ -42,6 +45,20 @@ export function StampControls({
         <span>{stampEnabled ? '◉' : '○'}</span>
         <span>DATE</span>
       </button>
+
+      {/* Size cycle */}
+      {stampEnabled && (
+        <button
+          onClick={onCycleScale}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-md border text-[10px] font-mono tracking-widest transition-all active:scale-95 ${
+            stampScale !== 1
+              ? 'border-yellow-500 text-yellow-300 bg-yellow-400/10'
+              : 'border-zinc-800 text-zinc-600'
+          }`}
+        >
+          {stampScale}X
+        </button>
+      )}
 
       {/* Rotation cycle */}
       {stampEnabled && (

@@ -7,7 +7,7 @@ import { useFlash } from '@/hooks/useFlash'
 import { useZoom } from '@/hooks/useZoom'
 import { useStamp } from '@/hooks/useStamp'
 import { drawStamp } from '@/lib/stamp'
-import type { StampRotation } from '@/lib/stamp'
+import type { StampRotation, StampScale } from '@/lib/stamp'
 import { capturePhoto, saveVideoCapture } from '@/lib/capture'
 import { FILTER_PRESETS, FILTER_LABELS } from '@/lib/filters/presets'
 import { VHSViewfinder } from './VHSViewfinder'
@@ -36,6 +36,7 @@ export function CameraView() {
   const [saving, setSaving]               = useState(false)
   const [showGallery, setShowGallery]     = useState(false)
   const [stampRotation, setStampRotation] = useState<StampRotation>(0)
+  const [stampScale, setStampScale]       = useState<StampScale>(1)
   const toastTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
   const stampAnimRef = useRef<number>(0)
 
@@ -68,7 +69,7 @@ export function CameraView() {
 
         // 2. Draw stamp on composite (burned into recording)
         if (stampHook.stamp.enabled) {
-          drawStamp(ctx, composite.width, composite.height, stampHook.stamp, stampRotation)
+          drawStamp(ctx, composite.width, composite.height, stampHook.stamp, stampRotation, stampScale)
         }
 
         // 3. Mirror stamp to visible overlay canvas
@@ -80,7 +81,7 @@ export function CameraView() {
           if (sCtx) {
             sCtx.clearRect(0, 0, sCanvas.width, sCanvas.height)
             if (stampHook.stamp.enabled) {
-              drawStamp(sCtx, sCanvas.width, sCanvas.height, stampHook.stamp, stampRotation)
+              drawStamp(sCtx, sCanvas.width, sCanvas.height, stampHook.stamp, stampRotation, stampScale)
             }
           }
         }
@@ -90,7 +91,7 @@ export function CameraView() {
 
     stampAnimRef.current = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(stampAnimRef.current)
-  }, [stampHook.stamp, stampRotation])
+  }, [stampHook.stamp, stampRotation, stampScale])
 
   const showToast = useCallback((msg: string, duration = 2500) => {
     if (toastTimer.current) clearTimeout(toastTimer.current)
@@ -179,6 +180,10 @@ export function CameraView() {
     setStampRotation(r => r === 0 ? 90 : r === 90 ? -90 : 0)
   }, [])
 
+  const cycleScale = useCallback(() => {
+    setStampScale(s => s === 1 ? 2 : s === 2 ? 3 : 1)
+  }, [])
+
   return (
     <div className="relative w-full flex flex-col bg-black overflow-hidden" style={{ height: '100dvh' }}>
       <video ref={videoRef} className="hidden" playsInline muted />
@@ -239,9 +244,11 @@ export function CameraView() {
         locationEnabled={stampHook.locationEnabled}
         locationStatus={stampHook.locationStatus}
         stampRotation={stampRotation}
+        stampScale={stampScale}
         onToggleStamp={() => stampHook.setEnabled(e => !e)}
         onToggleLocation={stampHook.toggleLocation}
         onCycleRotation={cycleRotation}
+        onCycleScale={cycleScale}
       />
 
       <VHSControls

@@ -1,6 +1,7 @@
 'use client'
 import { useState, useRef, useCallback } from 'react'
 import { getBestMimeType } from '@/lib/capture'
+import { createTapeAudioStream, type TapeAudioResult } from '@/lib/audio/tapeAudio'
 
 export type RecorderStatus = 'idle' | 'recording'
 
@@ -8,8 +9,9 @@ export function useRecorder(
   canvas: React.RefObject<HTMLCanvasElement | null>,
   audioRef: React.RefObject<MediaStream | null>
 ) {
-  const recorderRef = useRef<MediaRecorder | null>(null)
-  const chunksRef   = useRef<Blob[]>([])
+  const recorderRef  = useRef<MediaRecorder | null>(null)
+  const chunksRef    = useRef<Blob[]>([])
+  const tapeAudioRef = useRef<TapeAudioResult | null>(null)
   const [status, setStatus]           = useState<RecorderStatus>('idle')
   const [duration, setDuration]       = useState(0)
   const [recordError, setRecordError] = useState<string | null>(null)
@@ -37,7 +39,24 @@ export function useRecorder(
 
     const combined = new MediaStream()
     canvasStream.getVideoTracks().forEach(t => combined.addTrack(t))
-    audioRef.current?.getAudioTracks().forEach(t => combined.addTrack(t))
+
+    // Route the mic through the tape-hiss/motor-hum mixer when possible.
+    // Any failure here falls back to the raw mic track so a Web Audio
+    // quirk never breaks recording itself.
+    if (audioRef.current) {
+      try {
+        const tapeAudio = createTapeAudioStream(audioRef.current)
+        if (tapeAudio) {
+          tapeAudioRef.current = tapeAudio
+          tapeAudio.stream.getAudioTracks().forEach(t => combined.addTrack(t))
+        } else {
+          audioRef.current.getAudioTracks().forEach(t => combined.addTrack(t))
+        }
+      } catch (e) {
+        console.warn('[VHS] Tape audio mixer failed, using raw mic:', e)
+        audioRef.current.getAudioTracks().forEach(t => combined.addTrack(t))
+      }
+    }
 
     const mimeType = getBestMimeType()
     chunksRef.current = []
@@ -71,15 +90,21 @@ export function useRecorder(
   const stop = useCallback((): Promise<{ chunks: Blob[]; mimeType: string }> => {
     return new Promise(resolve => {
       const recorder = recorderRef.current
+      const finish = (result: { chunks: Blob[]; mimeType: string }) => {
+        tapeAudioRef.current?.dispose()
+        tapeAudioRef.current = null
+        resolve(result)
+      }
+
       if (!recorder) {
-        resolve({ chunks: chunksRef.current, mimeType: 'video/webm' })
+        finish({ chunks: chunksRef.current, mimeType: 'video/webm' })
         return
       }
       const mimeType = recorder.mimeType || 'video/webm'
-      recorder.onstop = () => resolve({ chunks: chunksRef.current, mimeType })
+      recorder.onstop = () => finish({ chunks: chunksRef.current, mimeType })
       try { recorder.stop() } catch (e) {
         console.error('Error stopping recorder:', e)
-        resolve({ chunks: chunksRef.current, mimeType })
+        finish({ chunks: chunksRef.current, mimeType })
       }
       recorderRef.current = null
       setStatus('idle')
