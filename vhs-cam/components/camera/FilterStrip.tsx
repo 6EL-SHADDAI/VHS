@@ -1,7 +1,7 @@
 'use client'
 import type { FilterMode } from '@/types'
 
-const FILTER_ORDER: FilterMode[] = ['vhs', 'vhs-c', 'glitch', 'night', 'film', 'disposable', 'polaroid']
+const FILTER_ORDER: FilterMode[] = ['disposable', 'vhs', 'vhs-c', 'night', 'film', 'polaroid', 'glitch']
 
 const FILTER_ACCENT: Record<FilterMode, { active: string; glow: string }> = {
   'vhs':        { active: 'border-yellow-400 text-yellow-300 bg-yellow-400/10',  glow: 'rgba(250,204,21,0.4)'  },
